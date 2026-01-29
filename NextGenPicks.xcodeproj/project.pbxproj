@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3889D4972F2B16870096C2EF /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = 3889D4962F2B16870096C2EF /* FirebaseAI */; };
+		3889D4992F2B16870096C2EF /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = 3889D4982F2B16870096C2EF /* FirebaseAILogic */; };
+		3889D49B2F2B16870096C2EF /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 3889D49A2F2B16870096C2EF /* FirebaseAnalytics */; };
+		3889D49D2F2B16870096C2EF /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 3889D49C2F2B16870096C2EF /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		387BBFF62F283BD200A4250B /* NextGenPicks.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NextGenPicks.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +30,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3889D4992F2B16870096C2EF /* FirebaseAILogic in Frameworks */,
+				3889D49D2F2B16870096C2EF /* FirebaseFirestore in Frameworks */,
+				3889D4972F2B16870096C2EF /* FirebaseAI in Frameworks */,
+				3889D49B2F2B16870096C2EF /* FirebaseAnalytics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +76,10 @@
 			);
 			name = NextGenPicks;
 			packageProductDependencies = (
+				3889D4962F2B16870096C2EF /* FirebaseAI */,
+				3889D4982F2B16870096C2EF /* FirebaseAILogic */,
+				3889D49A2F2B16870096C2EF /* FirebaseAnalytics */,
+				3889D49C2F2B16870096C2EF /* FirebaseFirestore */,
 			);
 			productName = NextGenPicks;
 			productReference = 387BBFF62F283BD200A4250B /* NextGenPicks.app */;
@@ -94,6 +109,9 @@
 			);
 			mainGroup = 387BBFED2F283BD200A4250B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3889D4952F2B16870096C2EF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 387BBFF72F283BD200A4250B /* Products */;
 			projectDirPath = "";
@@ -330,6 +348,40 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		3889D4952F2B16870096C2EF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3889D4962F2B16870096C2EF /* FirebaseAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3889D4952F2B16870096C2EF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAI;
+		};
+		3889D4982F2B16870096C2EF /* FirebaseAILogic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3889D4952F2B16870096C2EF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAILogic;
+		};
+		3889D49A2F2B16870096C2EF /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3889D4952F2B16870096C2EF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		3889D49C2F2B16870096C2EF /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3889D4952F2B16870096C2EF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 387BBFEE2F283BD200A4250B /* Project object */;
 }
