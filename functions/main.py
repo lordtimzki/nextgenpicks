@@ -5,12 +5,14 @@ from google.genai.errors import ClientError
 import os
 import json
 import datetime
+import uuid
 from retrieve import get_player_data, get_team_stats, get_odds_and_matchup
+from batch_analyze import batch_analyze, scheduled_refresh  # Import both for Firebase discovery
 
 # Initialize Firebase Admin
 initialize_app()
 
-@https_fn.on_request()
+@https_fn.on_request(secrets=["GOOGLE_API_KEY", "ODDS_API_KEY"], timeout_sec=120)
 def analyze_player(req: https_fn.Request) -> https_fn.Response:
     """
     HTTP Cloud Function to analyze a player.
@@ -71,7 +73,7 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
                     "book": prop['book']
                 })
 
-        # 5. Gemini Analysis
+    # 5. Gemini Analysis
         google_api_key = os.getenv("GOOGLE_API_KEY")
         if not google_api_key:
              return https_fn.Response("Server configuration error: GOOGLE_API_KEY missing", status=500)
@@ -129,7 +131,7 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
         ai_analysis = None
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash-exp", # Using a known model or consistent with backend
+                model="gemini-2.0-flash",
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
@@ -140,7 +142,7 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
         except Exception as e:
             ai_analysis = {"error": str(e)}
 
-        # 6. Construct Final Result
+            # 6. Construct Final Result (Legacy structure for reference/debugging)
         result = {
             "player": {
                 "name": player_data["name"],
@@ -165,13 +167,82 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
             "last_updated": datetime.datetime.now().isoformat()
         }
 
-        # 7. Write to Firestore
+        # 7. Write to Firestore 'players' (Legacy)
         db = firestore.client()
-        # Use player ID as document ID for easy lookup
         doc_ref = db.collection("players").document(str(player_data["id"]))
         doc_ref.set(result)
 
-        return https_fn.Response(json.dumps(result), mimetype='application/json')
+        # 8. Transform to PlayerCardData for iOS App and write to 'props' collection
+        # Group props by market+line to form PlayerProp objects
+        # Map: "market_line" -> {statName, line, over, under}
+        grouped_props = {}
+        
+        if formatted_props:
+            for p in formatted_props:
+                # p has: market, type (Over/Under), line, odds, book
+                # statName from market (e.g., player_points -> Points)
+                stat_name = p['market'].replace('player_', '').replace('_', ' ').title().replace('Points', 'Pts').replace('Assists', 'Ast').replace('Rebounds', 'Reb')
+                
+                key = f"{p['market']}_{p['line']}"
+                if key not in grouped_props:
+                    grouped_props[key] = {
+                        "id": str(uuid.uuid4()), # Generate valid UUID for Swift Codable
+                        "statName": stat_name,
+                        "line": p['line'],
+                        "overOdds": 0,
+                        "underOdds": 0
+                    }
+                
+                if p['type'].lower() == 'over':
+                    grouped_props[key]['overOdds'] = p['odds']
+                elif p['type'].lower() == 'under':
+                    grouped_props[key]['underOdds'] = p['odds']
+        
+        ios_props = list(grouped_props.values())
+        
+        # Determine Trending based on AI confidence
+        trending = "up" # default
+        confidence_score = 0
+        if ai_analysis and "top_pick" in ai_analysis and "confidence" in ai_analysis["top_pick"]:
+            conf_str = ai_analysis["top_pick"]["confidence"].replace('%', '')
+            try:
+                confidence_score = int(conf_str)
+                if confidence_score >= 75:
+                    trending = "hot"
+            except:
+                pass
+
+        # Game Start Time
+        game_time = "Scheduled"
+        if odds_data.get("game_info"):
+             # Parse and format if needed, or just say 'Tonight'
+             # For now, simplistic mapping.
+             game_time = "Tonight" 
+
+        ios_card_data = {
+            "id": player_data["id"],
+            "name": player_data["name"],
+            "teamAbbr": player_data["team_code"],
+            "position": player_data.get("position", "N/A"),  # Use actual position from NBA API
+            "imageName": player_data["image"], # Sends URL, App needs to handle it or we use placeholder
+            "props": ios_props,
+            "opponent": opponent_name,
+            "gameTime": game_time,
+            "trending": trending,
+            "last_updated": datetime.datetime.now().isoformat()
+        }
+        
+        # Write to 'props' collection (which FirebaseService queries)
+        # Using player_id as doc ID to avoid duplicates
+        db.collection("props").document(str(player_data["id"])).set(ios_card_data)
+
+        return https_fn.Response(json.dumps({
+            "status": "success",
+            "message": "Player analyzed and saved to Firestore",
+            "player_id": player_data["id"],
+            "data": ios_card_data
+        }), mimetype='application/json')
+
 
     except Exception as e:
         return https_fn.Response(f"Internal Error: {str(e)}", status=500)

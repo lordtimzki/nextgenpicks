@@ -40,7 +40,7 @@ enum TrendingStatus: String, Codable {
 }
 
 struct PlayerProp: Identifiable, Codable, Hashable {
-    var id = UUID()
+    let id: String  // UUID string from Firestore - must match Python's str(uuid.uuid4())
     let statName: String
     let line: Double
     let overOdds: Int

@@ -25,7 +25,7 @@ class MockDataService: DataService {
                 position: "SF",
                 imageName: "lebron_headshot",
                 props: [
-                    PlayerProp(statName: "Points", line: 25.5, overOdds: -110, underOdds: -110)
+                    PlayerProp(id: "mock-1", statName: "Points", line: 25.5, overOdds: -110, underOdds: -110)
                 ],
                 opponent: "GSW",
                 gameTime: "Live",
@@ -38,7 +38,7 @@ class MockDataService: DataService {
                 position: "PG",
                 imageName: "curry_headshot",
                 props: [
-                    PlayerProp(statName: "3PM", line: 4.5, overOdds: 140, underOdds: -170)
+                    PlayerProp(id: "mock-2", statName: "3PM", line: 4.5, overOdds: 140, underOdds: -170)
                 ],
                 opponent: "LAL",
                 gameTime: "Live",
@@ -51,7 +51,7 @@ class MockDataService: DataService {
                 position: "SF",
                 imageName: "tatum_headshot",
                 props: [
-                    PlayerProp(statName: "Points", line: 28.5, overOdds: -115, underOdds: -105)
+                    PlayerProp(id: "mock-3", statName: "Points", line: 28.5, overOdds: -115, underOdds: -105)
                 ],
                 opponent: "MIA",
                 gameTime: "8:00 PM",

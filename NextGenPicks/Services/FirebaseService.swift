@@ -17,15 +17,30 @@ class FirebaseService: DataService {
     }
     
     func fetchLiveProps() async throws -> [PlayerCardData] {
-        // This likely comes from a "feed" collection or a query on "props"
+        print("🔥 FirebaseService: Fetching live props...")
+        
+        // Temporarily fetch ALL props (no filter) to debug
         let snapshot = try await db.collection("props")
-            .whereField("trending", in: ["up", "hot"])
-            .limit(to: 20)
+            .limit(to: 30)
             .getDocuments()
         
-        return snapshot.documents.compactMap { doc in
-            try? doc.data(as: PlayerCardData.self)
+        print("🔥 FirebaseService: Found \(snapshot.documents.count) documents")
+        
+        var results: [PlayerCardData] = []
+        for doc in snapshot.documents {
+            do {
+                let data = try doc.data(as: PlayerCardData.self)
+                results.append(data)
+                print("✅ Decoded: \(data.name)")
+            } catch {
+                print("❌ Failed to decode document \(doc.documentID): \(error)")
+                // Print raw data for debugging
+                print("   Raw data: \(doc.data())")
+            }
         }
+        
+        print("🔥 FirebaseService: Successfully decoded \(results.count) players")
+        return results
     }
     
     func searchPlayers(query: String) async throws -> [PlayerCardData] {

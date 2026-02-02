@@ -10,7 +10,7 @@ ODDS_KEY = os.getenv("ODDS_API_KEY")
 def get_player_data(player_name):
     # Lazy import to speed up cold starts and deployment discovery
     from nba_api.stats.static import players, teams
-    from nba_api.stats.endpoints import playergamelog
+    from nba_api.stats.endpoints import playergamelog, commonplayerinfo
 
     print(f"DEBUG: Searching for {player_name} on NBA.com...")
     
@@ -24,6 +24,18 @@ def get_player_data(player_name):
     
     # Image url
     headshot_url = f"https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png"
+    
+    # Get player position from commonplayerinfo
+    position = "N/A"
+    try:
+        player_info = commonplayerinfo.CommonPlayerInfo(player_id=player_id)
+        info_dict = player_info.get_normalized_dict()['CommonPlayerInfo']
+        if info_dict:
+            # Position field contains the player's position (e.g., "Center", "Guard", "Forward")
+            position = str(info_dict[0].get('POSITION', 'N/A'))
+            print(f"DEBUG: {full_name} position: {position}")
+    except Exception as e:
+        print(f"WARNING: Could not fetch player position: {e}")
 
     try:
         log = playergamelog.PlayerGameLog(player_id=player_id, season='2025-26')
@@ -81,6 +93,7 @@ def get_player_data(player_name):
     return {
         "id": int(player_id),
         "name": str(full_name),
+        "position": str(position),
         "team_code": str(team_abbreviation),
         "team_name": str(team_full_name),
         "image": headshot_url,
@@ -131,6 +144,8 @@ def get_team_stats(team_name: str):
 
 # Get odds with odds api
 def get_odds_and_matchup(player_name: str):
+    from datetime import datetime, timezone
+    
     print(f"DEBUG: Finding odds for {player_name}...")
     
     # Check key inside the function to avoid global scope issues if env var changes
@@ -139,11 +154,9 @@ def get_odds_and_matchup(player_name: str):
         print("ERROR: Missing ODDS_API_KEY")
         return {"game_info": None, "props": []}
     
-    # Synchronous wrapper or using sync httpx since Cloud Functions might not fully support async properly depending on runtime version
-    # But usually Python 3.10+ functions support async. keeping it sync for simplicity if valid, but
-    # original code was async. Let's keep it sync for safety in generic cloud functions or just use httpx.Client.
-    # Actually, let's stick to httpx.Client (sync) to avoid async event loop issues in simple HTTP triggers unless defined as async def.
-    # I will adapt to sync for robustness in this helper.
+    # Get current time in UTC for filtering past games
+    now_utc = datetime.now(timezone.utc)
+    print(f"DEBUG: Current UTC time: {now_utc.isoformat()}")
 
     with httpx.Client(timeout=30.0) as client:
         try:
@@ -152,16 +165,34 @@ def get_odds_and_matchup(player_name: str):
                 params={"apiKey": api_key, "regions": "us"}
             )
             odds_resp.raise_for_status()
-            events = odds_resp.json()
+            all_events = odds_resp.json()
         except Exception as e:
             print(f"ERROR fetching events: {e}")
             return {"game_info": None, "props": []}
         
+        # Filter out past games - only include games that haven't started yet
+        future_events = []
+        for event in all_events:
+            commence_time_str = event.get("commence_time", "")
+            try:
+                # commence_time is ISO 8601 format (e.g., "2026-02-02T00:00:00Z")
+                commence_time = datetime.fromisoformat(commence_time_str.replace('Z', '+00:00'))
+                if commence_time > now_utc:
+                    future_events.append(event)
+                else:
+                    print(f"DEBUG: Skipping past game: {event.get('home_team')} vs {event.get('away_team')} ({commence_time_str})")
+            except Exception as e:
+                print(f"WARNING: Could not parse commence_time '{commence_time_str}': {e}")
+                # Include event if we can't parse the time (to be safe)
+                future_events.append(event)
+        
+        print(f"DEBUG: {len(future_events)} future games found out of {len(all_events)} total")
+        
         found_props = []
         game_info = None
 
-        # Limit to 5 events to save API calls
-        for event in events[:5]:
+        # Limit to 5 future events to save API calls
+        for event in future_events[:5]:
             game_id = event["id"]
             
             try:
