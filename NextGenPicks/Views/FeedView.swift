@@ -34,7 +34,44 @@ struct FeedView: View {
                             .padding(.horizontal)
                             .padding(.top, 10)
                             
-                            // 2. Quick Stats Row
+                            // 2. For You Section (top 5 picks for parlay builders)
+                            if !vm.forYouProps.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("For You")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+
+                                        Spacer()
+
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "star.fill")
+                                                .font(.caption)
+                                            Text("Top 5 Legs")
+                                                .font(.caption)
+                                        }
+                                        .foregroundStyle(Color.brandOrange)
+                                    }
+                                    .padding(.horizontal)
+
+                                    LazyVGrid(columns: columns, spacing: 12) {
+                                        ForEach(Array(vm.forYouProps.prefix(5))) { prop in
+                                            PlayerPropCard(player: prop)
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+
+                                // Separator line
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 1)
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 8)
+                            }
+
+                            // 3. Quick Stats Row
                             HStack(spacing: 12) {
                                 QuickStatCard(
                                     title: "Hot Props",
@@ -56,8 +93,8 @@ struct FeedView: View {
                                 )
                             }
                             .padding(.horizontal)
-                            
-                            // 3. Top Picks Section (highest ranked props)
+
+                            // 4. Top Picks Section (highest ranked props)
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Top Picks")
                                     .font(.title3)
@@ -71,36 +108,6 @@ struct FeedView: View {
                                     }
                                 }
                                 .padding(.horizontal)
-                            }
-
-                            // 4. For You Section (urgency-based, personalized)
-                            if !vm.forYouProps.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Text("For You")
-                                            .font(.title3)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(.white)
-
-                                        Spacer()
-
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "clock.fill")
-                                                .font(.caption)
-                                            Text("Starting Soon")
-                                                .font(.caption)
-                                        }
-                                        .foregroundStyle(Color.brandOrange)
-                                    }
-                                    .padding(.horizontal)
-
-                                    LazyVGrid(columns: columns, spacing: 12) {
-                                        ForEach(vm.forYouProps) { prop in
-                                            PlayerPropCard(player: prop)
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                }
                             }
                         }
                         .padding(.bottom, 20)

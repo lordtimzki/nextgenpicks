@@ -39,6 +39,58 @@ enum TrendingStatus: String, Codable {
     case hot
 }
 
+// Hit rate result for a single game
+struct HitRateGame: Codable {
+    let value: Double
+    let hit: Bool
+    let date: String
+    let matchup: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Handle value as Double or Int
+        if let doubleValue = try? container.decode(Double.self, forKey: .value) {
+            self.value = doubleValue
+        } else if let intValue = try? container.decode(Int.self, forKey: .value) {
+            self.value = Double(intValue)
+        } else {
+            self.value = 0
+        }
+
+        self.hit = try container.decode(Bool.self, forKey: .hit)
+        self.date = try container.decodeIfPresent(String.self, forKey: .date) ?? ""
+        self.matchup = try container.decodeIfPresent(String.self, forKey: .matchup) ?? ""
+    }
+
+    init(value: Double, hit: Bool, date: String, matchup: String) {
+        self.value = value
+        self.hit = hit
+        self.date = date
+        self.matchup = matchup
+    }
+}
+
+// Hit rate data for last 5 games
+struct HitRate: Codable {
+    let hits: Int
+    let total: Int
+    let results: [HitRateGame]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.hits = try container.decodeIfPresent(Int.self, forKey: .hits) ?? 0
+        self.total = try container.decodeIfPresent(Int.self, forKey: .total) ?? 0
+        self.results = try container.decodeIfPresent([HitRateGame].self, forKey: .results) ?? []
+    }
+
+    init(hits: Int, total: Int, results: [HitRateGame]) {
+        self.hits = hits
+        self.total = total
+        self.results = results
+    }
+}
+
 struct PlayerAverages: Codable {
     let pts: Double
     let reb: Double
@@ -153,9 +205,11 @@ struct PlayerCardData: Identifiable, Codable {
     var urgencyScore: Double?
     var section: PropSection?
     var player_id: String?
+    var recommendedDirection: String?  // "Over" or "Under" based on player avg vs line
 
     // Optional fields from the new Underdog data source
     var ai_analysis: String?
+    var aiRecommended: String?
     var source: String?
     var last_updated: String?
     var gameTimeUTC: String?  // ISO timestamp for local time conversion
@@ -164,6 +218,7 @@ struct PlayerCardData: Identifiable, Codable {
     var featured: Bool?
     var rankingScore: Double?
     var playerAverages: PlayerAverages?
+    var hitRate: HitRate?  // Last 5 games hit rate for this prop
 
     // Computed property: get the main prop (either from single prop fields or first of array)
     var mainProp: PlayerProp? {
@@ -189,12 +244,12 @@ struct PlayerCardData: Identifiable, Codable {
     // Regular initializer for programmatic creation (mocks, previews)
     init(id: Any, name: String, teamAbbr: String, position: String, imageName: String,
          props: [PlayerProp]? = nil, opponent: String, gameTime: String, trending: TrendingStatus,
-         ai_analysis: String? = nil, source: String? = nil, last_updated: String? = nil, gameTimeUTC: String? = nil,
-         featured: Bool? = nil, rankingScore: Double? = nil, playerAverages: PlayerAverages? = nil,
+         ai_analysis: String? = nil, aiRecommended: String? = nil, source: String? = nil, last_updated: String? = nil, gameTimeUTC: String? = nil,
+         featured: Bool? = nil, rankingScore: Double? = nil, playerAverages: PlayerAverages? = nil, hitRate: HitRate? = nil,
          statName: String? = nil, statNameFull: String? = nil, line: Double? = nil,
          overOdds: Int? = nil, underOdds: Int? = nil, propId: String? = nil,
          edge: Double? = nil, playerAverage: Double? = nil, urgencyScore: Double? = nil,
-         section: PropSection? = nil, player_id: String? = nil) {
+         section: PropSection? = nil, player_id: String? = nil, recommendedDirection: String? = nil) {
         // Accept Int or String for id
         if let intId = id as? Int {
             self.id = String(intId)
@@ -212,12 +267,14 @@ struct PlayerCardData: Identifiable, Codable {
         self.gameTime = gameTime
         self.trending = trending
         self.ai_analysis = ai_analysis
+        self.aiRecommended = aiRecommended
         self.source = source
         self.last_updated = last_updated
         self.gameTimeUTC = gameTimeUTC
         self.featured = featured
         self.rankingScore = rankingScore
         self.playerAverages = playerAverages
+        self.hitRate = hitRate
         // New single prop fields
         self.statName = statName
         self.statNameFull = statNameFull
@@ -230,6 +287,7 @@ struct PlayerCardData: Identifiable, Codable {
         self.urgencyScore = urgencyScore
         self.section = section
         self.player_id = player_id
+        self.recommendedDirection = recommendedDirection
     }
 
     // Custom decoder to handle id being either Int or String in Firebase
@@ -262,6 +320,7 @@ struct PlayerCardData: Identifiable, Codable {
         self.propId = try container.decodeIfPresent(String.self, forKey: .propId)
         self.player_id = try container.decodeIfPresent(String.self, forKey: .player_id)
         self.section = try container.decodeIfPresent(PropSection.self, forKey: .section)
+        self.recommendedDirection = try container.decodeIfPresent(String.self, forKey: .recommendedDirection)
 
         // Handle line as Double or Int
         if let doubleLine = try? container.decodeIfPresent(Double.self, forKey: .line) {
@@ -304,6 +363,7 @@ struct PlayerCardData: Identifiable, Codable {
 
         // Optional metadata fields
         self.ai_analysis = try container.decodeIfPresent(String.self, forKey: .ai_analysis)
+        self.aiRecommended = try container.decodeIfPresent(String.self, forKey: .aiRecommended)
         self.source = try container.decodeIfPresent(String.self, forKey: .source)
         self.last_updated = try container.decodeIfPresent(String.self, forKey: .last_updated)
         self.gameTimeUTC = try container.decodeIfPresent(String.self, forKey: .gameTimeUTC)
@@ -319,5 +379,6 @@ struct PlayerCardData: Identifiable, Codable {
             self.rankingScore = nil
         }
         self.playerAverages = try container.decodeIfPresent(PlayerAverages.self, forKey: .playerAverages)
+        self.hitRate = try container.decodeIfPresent(HitRate.self, forKey: .hitRate)
     }
 }

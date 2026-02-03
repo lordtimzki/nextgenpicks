@@ -4,6 +4,13 @@ struct PlayerPropCard: View {
     let player: PlayerCardData
     @State private var showingMoreMarkets: Bool = false
     @State private var showingPlayerDetail: Bool = false
+    @State private var showingAIAnalysis: Bool = false
+
+    // Computed property to get the recommended direction (from AI or algorithm)
+    private var recommendation: String? {
+        // Prefer AI recommendation, fall back to algorithmic recommendation
+        player.aiRecommended ?? player.recommendedDirection
+    }
 
     // Convert UTC time to user's local timezone with day of week
     private var formattedGameTime: String {
@@ -102,38 +109,55 @@ struct PlayerPropCard: View {
                     endPoint: .bottom
                 )
                 
-                // Trending Badge (Top Right)
-                if player.trending == .hot {
-                    HStack(spacing: 4) {
-                        Image(systemName: "flame.fill")
-                            .font(.caption2)
-                        Text("HOT")
-                            .font(.caption2)
-                            .fontWeight(.bold)
+                // Badges (Top Right) - Trending + Ranking
+                VStack(alignment: .trailing, spacing: 4) {
+                    // Trending Badge
+                    if player.trending == .hot {
+                        HStack(spacing: 4) {
+                            Image(systemName: "flame.fill")
+                                .font(.caption2)
+                            Text("HOT")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.brandOrange.opacity(0.9))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chart.line.uptrend.xyaxis")
+                                .font(.caption2)
+                            Text("TRENDING")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.brandEmerald.opacity(0.9))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.brandOrange.opacity(0.9))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(.caption2)
-                        Text("TRENDING")
-                            .font(.caption2)
-                            .fontWeight(.bold)
+
+                    // Ranking Score Badge (if available and high enough)
+                    if let score = player.rankingScore, score >= 5.0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 8))
+                            Text(String(format: "%.1f", score))
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.brandPurple.opacity(0.9))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.brandEmerald.opacity(0.9))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 
                 // Player Name (Bottom Left)
                 Text(player.name)
@@ -181,23 +205,104 @@ struct PlayerPropCard: View {
                             .foregroundStyle(.white)
                     }
 
-                    // Show edge indicator if available
-                    if let edge = player.edge, let avg = player.playerAverage, edge != 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: edge > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                                .font(.caption2)
-                            Text("Avg: \(String(format: "%.1f", avg))")
-                                .font(.caption2)
+                    // Show edge indicator and hit rate
+                    HStack(spacing: 12) {
+                        // Edge indicator
+                        if let edge = player.edge, let avg = player.playerAverage, edge != 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: edge > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                                    .font(.caption2)
+                                Text("Avg: \(String(format: "%.1f", avg))")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(edge > 0 ? Color.brandEmerald : Color.brandRed)
                         }
-                        .foregroundStyle(edge > 0 ? Color.brandEmerald : Color.brandRed)
+
+                        // Hit rate indicator (Last 5 games)
+                        if let hitRate = player.hitRate, hitRate.total > 0 {
+                            HStack(spacing: 3) {
+                                // Visual dots for last 5 games
+                                ForEach(0..<hitRate.results.count, id: \.self) { index in
+                                    Circle()
+                                        .fill(hitRate.results[index].hit ? Color.brandEmerald : Color.brandRed.opacity(0.5))
+                                        .frame(width: 6, height: 6)
+                                }
+                                Text("\(hitRate.hits)/\(hitRate.total)")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(hitRate.hits >= 3 ? Color.brandEmerald : Color.secondaryText)
+                            }
+                        }
                     }
 
+                    // Recommendation indicator (combines AI + algorithmic recommendation)
+                    if let rec = recommendation {
+                        HStack(spacing: 4) {
+                            Image(systemName: player.aiRecommended != nil ? "sparkles" : "chart.line.uptrend.xyaxis")
+                                .font(.caption2)
+                            Text(player.aiRecommended != nil ? "AI Pick: \(rec)" : "Lean: \(rec)")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                        }
+                        .foregroundStyle(rec == "Over" ? Color.brandEmerald : Color.brandRed)
+                        .padding(.top, 2)
+                    }
+
+                    // Over/Under buttons with recommendation highlight
                     HStack(spacing: 8) {
-                        PropButton(label: "Over", odds: mainProp.overOdds, color: .brandEmerald)
-                        PropButton(label: "Under", odds: mainProp.underOdds, color: .brandRed)
+                        PropButton(
+                            label: "Over",
+                            odds: mainProp.overOdds,
+                            color: .brandEmerald,
+                            isRecommended: recommendation == "Over"
+                        )
+                        PropButton(
+                            label: "Under",
+                            odds: mainProp.underOdds,
+                            color: .brandRed,
+                            isRecommended: recommendation == "Under"
+                        )
                     }
                 }
                 .padding(12)
+
+                // AI Analysis expandable section
+                if let analysis = player.ai_analysis, !analysis.isEmpty {
+                    VStack(spacing: 0) {
+                        Divider()
+                            .background(Color.border)
+
+                        Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showingAIAnalysis.toggle() } }) {
+                            HStack {
+                                Image(systemName: "sparkles")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.brandPurple)
+                                Text("AI Analysis")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(Color.secondaryText)
+                                Spacer()
+                                Image(systemName: showingAIAnalysis ? "chevron.up" : "chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.secondaryText)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.plain)
+
+                        if showingAIAnalysis {
+                            Text(analysis)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.9))
+                                .multilineTextAlignment(.leading)
+                                .padding(.horizontal, 12)
+                                .padding(.bottom, 12)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                    }
+                    .background(Color.white.opacity(0.02))
+                }
             }
 
             // 4. More Markets Button (only show for legacy multi-prop cards)
@@ -339,17 +444,25 @@ struct PropButton: View {
     let odds: Int
     let color: Color
     var size: ButtonSize = .regular
-    
+    var isRecommended: Bool = false
+
     enum ButtonSize {
         case regular, small
     }
-    
+
     var body: some View {
         Button(action: {}) {
             VStack(spacing: 0) {
-                Text(label)
-                    .font(.caption2)
-                    .foregroundStyle(.gray)
+                HStack(spacing: 2) {
+                    if isRecommended {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(color)
+                    }
+                    Text(label)
+                        .font(.caption2)
+                        .foregroundStyle(isRecommended ? color : .gray)
+                }
                 Text(odds > 0 ? "+\(odds)" : "\(odds)")
                     .font(size == .regular ? .subheadline : .caption)
                     .fontWeight(.semibold)
@@ -357,10 +470,10 @@ struct PropButton: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, size == .regular ? 8 : 4)
-            .background(color.opacity(0.1))
+            .background(color.opacity(isRecommended ? 0.2 : 0.1))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(color.opacity(0.3), lineWidth: 1)
+                    .stroke(color.opacity(isRecommended ? 0.6 : 0.3), lineWidth: isRecommended ? 2 : 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }

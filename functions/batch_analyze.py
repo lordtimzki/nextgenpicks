@@ -35,7 +35,8 @@ def calculate_urgency_score(game_time_utc: str) -> float:
         return 2.0
 
     try:
-        game_dt = datetime.datetime.fromisoformat(game_time_utc.replace('Z', '+00:00'))
+        game_dt = datetime.datetime.fromisoformat(
+            game_time_utc.replace('Z', '+00:00'))
         now = datetime.datetime.now(timezone.utc)
         hours_until_game = (game_dt - now).total_seconds() / 3600
 
@@ -64,7 +65,8 @@ def calculate_odds_value_score(props: list) -> float:
 
     for prop in props:
         try:
-            over_odds = int(str(prop.get("over_american", "-110")).replace("+", ""))
+            over_odds = int(
+                str(prop.get("over_american", "-110")).replace("+", ""))
         except (ValueError, TypeError):
             over_odds = -110
 
@@ -88,7 +90,7 @@ def calculate_odds_value_score(props: list) -> float:
 def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
-    Returns (total_score, edge_value, player_average_for_stat)
+    Returns (total_score, edge_value, player_average_for_stat, urgency_score, recommended_direction)
 
     Formula: (edgeScore * 0.4) + (starPowerScore * 0.3) + (urgencyScore * 0.2) + (oddsValueScore * 0.1)
     """
@@ -97,24 +99,30 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
 
     # Determine which average to use for this prop
     player_avg = 0
-    if "point" in stat:
+    stat_lower = stat.lower()
+
+    if "3-pointer" in stat_lower or "3pm" in stat_lower:
+        player_avg = averages.get("fg3m", 0)  # Use actual 3PM stat
+    elif "point" in stat_lower or "pts" in stat_lower:
         player_avg = averages.get("pts", 0)
-    elif "rebound" in stat:
+    elif "rebound" in stat_lower or "reb" in stat_lower:
         player_avg = averages.get("reb", 0)
-    elif "assist" in stat:
+    elif "assist" in stat_lower or "ast" in stat_lower:
         player_avg = averages.get("ast", 0)
-    elif "3-pointer" in stat or "3pm" in stat.lower():
-        # Estimate 3PM from points (rough heuristic)
-        player_avg = averages.get("pts", 0) * 0.1
-    elif "pts + rebs + asts" in stat or "pra" in stat.lower():
-        player_avg = averages.get("pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
+    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        player_avg = averages.get(
+            "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
 
     # 1. Edge Score - how much player avg exceeds the line
     edge = player_avg - line if player_avg > 0 else 0
     edge_score = min(10.0, max(0.0, (edge / 5.0) * 10.0))
 
+    # Determine recommendation: Over if player avg > line, Under otherwise
+    recommended_direction = "Over" if player_avg > line else "Under"
+
     # 2. Star Power Score - based on total production
-    total_production = averages.get("pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
+    total_production = averages.get(
+        "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
     star_score = min(10.0, total_production / 4.0)
 
     # 3. Urgency Score
@@ -122,7 +130,8 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
 
     # 4. Odds Value Score (for this single prop)
     try:
-        over_odds = int(str(prop.get("over_american", "-110")).replace("+", ""))
+        over_odds = int(
+            str(prop.get("over_american", "-110")).replace("+", ""))
     except (ValueError, TypeError):
         over_odds = -110
 
@@ -138,9 +147,10 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
         odds_score = 2.0
 
     # Calculate total score
-    total = (edge_score * 0.4) + (star_score * 0.3) + (urgency_score * 0.2) + (odds_score * 0.1)
+    total = (edge_score * 0.4) + (star_score * 0.3) + \
+        (urgency_score * 0.2) + (odds_score * 0.1)
 
-    return total, round(edge, 2), round(player_avg, 1), urgency_score
+    return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction
 
 
 def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str) -> tuple:
@@ -154,10 +164,12 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str) 
     best_components = {"edge": 0, "star": 0, "urgency": 0, "odds": 0}
 
     for prop in props:
-        score, edge, player_avg, urgency = calculate_prop_ranking_score(prop, averages, game_time_utc)
+        score, edge, player_avg, urgency, recommended_direction = calculate_prop_ranking_score(
+            prop, averages, game_time_utc)
         if score > best_score:
             best_score = score
-            total_production = averages.get("pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
+            total_production = averages.get(
+                "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
             best_components = {
                 "edge": round(min(10.0, max(0.0, (edge / 5.0) * 10.0)), 2),
                 "star": round(min(10.0, total_production / 4.0), 2),
@@ -354,7 +366,7 @@ def get_espn_nba_schedule() -> list:
 
 
 def get_player_stats_quick(player_name: str) -> dict | None:
-    """Get basic player stats from NBA API."""
+    """Get basic player stats from NBA API including last 5 games for hit rate."""
     try:
         from nba_api.stats.static import players, teams
         from nba_api.stats.endpoints import playergamelog, commonplayerinfo
@@ -389,6 +401,19 @@ def get_player_stats_quick(player_name: str) -> dict | None:
                 avg_pts = sum(g['PTS'] for g in games) / len(games)
                 avg_reb = sum(g['REB'] for g in games) / len(games)
                 avg_ast = sum(g['AST'] for g in games) / len(games)
+                avg_fg3m = sum(g['FG3M'] for g in games) / len(games)
+
+                # Extract last 5 game stats for hit rate calculation
+                last5_games = []
+                for g in games:
+                    last5_games.append({
+                        "pts": g['PTS'],
+                        "reb": g['REB'],
+                        "ast": g['AST'],
+                        "fg3m": g['FG3M'],
+                        "matchup": g['MATCHUP'],
+                        "date": g['GAME_DATE']
+                    })
 
                 return {
                     "id": int(player_id),
@@ -400,8 +425,10 @@ def get_player_stats_quick(player_name: str) -> dict | None:
                     "averages": {
                         "pts": round(avg_pts, 1),
                         "reb": round(avg_reb, 1),
-                        "ast": round(avg_ast, 1)
-                    }
+                        "ast": round(avg_ast, 1),
+                        "fg3m": round(avg_fg3m, 1)
+                    },
+                    "last5Games": last5_games
                 }
         except Exception as e:
             print(f"Could not get game log for {player_name}: {e}")
@@ -410,14 +437,67 @@ def get_player_stats_quick(player_name: str) -> dict | None:
             "id": int(player_id),
             "name": player['full_name'],
             "position": position,
-            "team_code": "",  # Empty so caller can use other sources
+            "team_code": "",
             "team_name": "",
             "image": f"https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png",
-            "averages": {"pts": 0, "reb": 0, "ast": 0}
+            "averages": {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0},
+            "last5Games": []
         }
     except Exception as e:
         print(f"Error getting stats for {player_name}: {e}")
         return None
+
+
+def calculate_hit_rate(last5_games: list, stat_name: str, line: float) -> dict:
+    """
+    Calculate hit rate for a specific stat against a line.
+    Returns dict with hits, total, and individual game results.
+    """
+    if not last5_games:
+        return {"hits": 0, "total": 0, "results": []}
+
+    stat_key = None
+    stat_lower = stat_name.lower()
+
+    if "3-pointer" in stat_lower or "3pm" in stat_lower:
+        stat_key = "fg3m"
+    elif "point" in stat_lower or "pts" in stat_lower:
+        stat_key = "pts"
+    elif "rebound" in stat_lower or "reb" in stat_lower:
+        stat_key = "reb"
+    elif "assist" in stat_lower or "ast" in stat_lower:
+        stat_key = "ast"
+    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        stat_key = "pra"  # Combined stat
+
+    if not stat_key:
+        return {"hits": 0, "total": 0, "results": []}
+
+    hits = 0
+    results = []
+
+    for game in last5_games:
+        if stat_key == "pra":
+            value = game.get("pts", 0) + game.get("reb", 0) + \
+                game.get("ast", 0)
+        else:
+            value = game.get(stat_key, 0)
+
+        hit = value > line
+        if hit:
+            hits += 1
+        results.append({
+            "value": value,
+            "hit": hit,
+            "date": game.get("date", ""),
+            "matchup": game.get("matchup", "")
+        })
+
+    return {
+        "hits": hits,
+        "total": len(last5_games),
+        "results": results
+    }
 
 
 def format_props_for_ios(props: list) -> list:
@@ -539,7 +619,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     print("📊 Calculating ranking scores...")
     for ep in enriched_players:
         nba_stats = ep.get("nba_stats") or {}
-        averages = nba_stats.get("averages", {"pts": 0, "reb": 0, "ast": 0})
+        averages = nba_stats.get(
+            "averages", {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0})
         ud_game = ep.get("underdog_game", {})
         game_time_utc = None
         if ud_game.get("scheduled_at"):
@@ -561,83 +642,185 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         ep["player_averages"] = averages
 
     # Sort by ranking score (highest first) and mark top 12 as featured
-    enriched_players.sort(key=lambda x: x.get("ranking_score", 0), reverse=True)
+    enriched_players.sort(key=lambda x: x.get(
+        "ranking_score", 0), reverse=True)
     featured_count = min(12, len(enriched_players))
     for i, ep in enumerate(enriched_players):
         ep["featured"] = i < featured_count
 
     print(f"✓ Marked top {featured_count} players as featured")
 
-    # 5. Gemini AI Analysis (ONLY for featured players)
-    ai_by_name = {}
+    # 5. Gemini AI Analysis (per-prop, not per-player)
+    # Key format: "playername_statname" -> analysis
+    ai_by_prop = {}
     google_api_key = os.getenv("GOOGLE_API_KEY")
 
-    featured_players = [ep for ep in enriched_players if ep.get("featured", False)]
+    # Build list of top props to analyze (will be sorted later, but estimate top 20)
+    # First, collect all props with their ranking scores
+    all_props_for_ranking = []
+    for ep in enriched_players:
+        ud_player = ep["underdog_player"]
+        ud_props = ep["underdog_props"]
+        nba_stats = ep.get("nba_stats") or {}
+        player_averages = ep.get(
+            "player_averages", {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0})
+        ud_game = ep.get("underdog_game", {})
 
-    if google_api_key and len(featured_players) > 0:
+        # Get player's team
+        player_team = ""
+        if nba_stats and nba_stats.get("team_code"):
+            player_team = nba_stats["team_code"]
+        elif ep.get("underdog_team_abbr"):
+            player_team = ep["underdog_team_abbr"]
+
+        # Determine opponent from matchup
+        abbr_title = ud_game.get("abbreviated_title", "")  # e.g., "PHX @ LAL"
+        opponent_team = ""
+        if " @ " in abbr_title:
+            away, home = abbr_title.split(" @ ")
+            if player_team == away:
+                opponent_team = home
+            elif player_team == home:
+                opponent_team = away
+            else:
+                # Fallback: just use the other team
+                opponent_team = home if player_team != home else away
+
+        game_time_utc = None
+        if ud_game.get("scheduled_at"):
+            try:
+                game_dt = datetime.datetime.fromisoformat(
+                    ud_game["scheduled_at"].replace('Z', '+00:00'))
+                game_time_utc = game_dt.isoformat()
+            except:
+                pass
+
+        priority_stats = ["Points", "Rebounds", "Assists",
+                          "3-Pointers Made", "Pts + Rebs + Asts"]
+        for prop in ud_props:
+            stat_name = prop.get("stat_name", "")
+            if stat_name not in priority_stats:
+                continue
+
+            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
+                prop, player_averages, game_time_utc
+            )
+
+            all_props_for_ranking.append({
+                "player_name": ep["name"],
+                "player_team": player_team,
+                "opponent_team": opponent_team,
+                "position": nba_stats.get("position", ud_player.get("position_name", "N/A")),
+                "stat_name": stat_name,
+                "line": prop.get("line", 0),
+                "player_avg": player_avg,
+                "ranking_score": prop_score,
+                "averages": player_averages
+            })
+
+    # Sort by ranking score and take top 20 for AI analysis
+    all_props_for_ranking.sort(key=lambda x: x["ranking_score"], reverse=True)
+    top_props_for_ai = all_props_for_ranking[:20]
+
+    if google_api_key and len(top_props_for_ai) > 0:
         try:
-            players_for_ai = featured_players  # Only analyze featured players
-            summaries = []
+            # Build prop-specific summaries
+            prop_summaries = []
+            for prop_data in top_props_for_ai:
+                # Get the relevant average for this stat
+                stat_lower = prop_data["stat_name"].lower()
+                relevant_avg = prop_data["player_avg"]
+                avg_label = "average"
 
-            for ep in players_for_ai:
-                ud_game = ep.get("underdog_game", {})
-                nba_stats = ep.get("nba_stats") or {}
+                if "point" in stat_lower:
+                    avg_label = "pts avg"
+                elif "rebound" in stat_lower:
+                    avg_label = "reb avg"
+                elif "assist" in stat_lower:
+                    avg_label = "ast avg"
+                elif "3-pointer" in stat_lower:
+                    avg_label = "3PM avg"
+                elif "pts + rebs + asts" in stat_lower:
+                    avg_label = "PRA avg"
 
-                opponent = ud_game.get("abbreviated_title", "TBD")
-                averages = nba_stats.get(
-                    "averages", {"pts": 0, "reb": 0, "ast": 0})
-
-                # Get top props for context
-                top_props = [
-                    f"{p['stat_name']} {p['line']}" for p in ep["underdog_props"][:3]]
-
-                summaries.append({
-                    "name": ep["name"],
-                    "position": nba_stats.get("position", ep["underdog_player"].get("position_name", "N/A")),
-                    "averages": averages,
-                    "opponent": opponent,
-                    "props": top_props
+                prop_summaries.append({
+                    "player": prop_data["player_name"],
+                    "team": prop_data["player_team"],
+                    "opponent": prop_data["opponent_team"],
+                    "position": prop_data["position"],
+                    "stat": prop_data["stat_name"],
+                    "line": prop_data["line"],
+                    f"{avg_label}": relevant_avg
                 })
 
             client = genai.Client(api_key=google_api_key)
             prompt = f"""You are an expert NBA handicapper providing prop bet analysis.
 
-**PLAYERS TO ANALYZE:** {len(summaries)}
+**CRITICAL CONTEXT:**
+- Each prop shows which TEAM the player plays FOR and which team they play AGAINST (opponent).
+- The player is ON the "team" field, playing AGAINST the "opponent" field.
+- Example: If team="PHX" and opponent="LAL", the player plays FOR Phoenix AGAINST the Lakers.
+
+**PROPS TO ANALYZE:** {len(prop_summaries)}
 
 **DATA:**
-{json.dumps(summaries, indent=2)}
+{json.dumps(prop_summaries, indent=2)}
 
-**FOR EACH PLAYER PROVIDE:**
-1. "trending": "hot" (strong bet) or "up" (standard play)
-2. "analysis": A specific 1-2 sentence analysis that MUST include:
-   - The opponent context
-   - A concrete recommendation on one of their props
+**ANALYSIS GUIDELINES - FOCUS ON MATCHUP FACTORS:**
+- DO NOT just say "player averages X which is higher than the line" - that's not insightful
+- FOCUS ON these matchup-specific factors:
+  * Opponent's defensive rating and how they defend this position/stat
+  * Opponent's pace of play (fast pace = more possessions = more stats)
+  * Opponent's weaknesses (e.g., "LAL allows 4th most rebounds to centers")
+  * Recent injury news affecting opponent's defense
+  * Back-to-back or fatigue factors
+  * Home/away splits if relevant
+- Be specific about WHY the matchup favors Over or Under
+
+**FOR EACH PROP PROVIDE:**
+1. "player": The player's name (must match exactly)
+2. "stat": The stat type (must match exactly: "Points", "Rebounds", "Assists", "3-Pointers Made", or "Pts + Rebs + Asts")
+3. "trending": "hot" (strong edge based on matchup) or "up" (standard play)
+4. "analysis": 1-2 sentences focusing on MATCHUP FACTORS, not just averages. Why does this specific opponent make Over/Under favorable?
+5. "direction": "Over" or "Under" recommendation
 
 **OUTPUT FORMAT (VALID JSON):**
 {{
-    "players": [
+    "props": [
         {{
-            "name": "Player Name",
+            "player": "Cooper Flagg",
+            "stat": "Points",
             "trending": "hot",
-            "analysis": "Facing the Celtics who rank 3rd in defensive rating. Lean Under 24.5 pts."
+            "analysis": "LAL ranks 28th in perimeter defense and plays at the 5th fastest pace. High-volume scoring opportunity.",
+            "direction": "Over"
+        }},
+        {{
+            "player": "Cooper Flagg",
+            "stat": "Rebounds",
+            "trending": "up",
+            "analysis": "LAL allows the 3rd most rebounds to forwards this season. Favorable glass matchup.",
+            "direction": "Over"
         }}
     ]
 }}
 """
 
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-3-pro",
                 contents=prompt,
                 config={"response_mime_type": "application/json",
-                        "temperature": 0.4}
+                        "temperature": 0.3}
             )
             ai_results = json.loads(response.text)
-            print("✓ Gemini analysis complete")
+            print("✓ Gemini per-prop analysis complete")
 
-            for p in ai_results.get("players", []):
-                ai_by_name[p["name"].lower()] = {
+            for p in ai_results.get("props", []):
+                # Create unique key: playername_stat
+                key = f"{p['player'].lower()}_{p['stat'].lower()}"
+                ai_by_prop[key] = {
                     "trending": p.get("trending", "up"),
-                    "analysis": p.get("analysis", "")
+                    "analysis": p.get("analysis", ""),
+                    "direction": p.get("direction", "")
                 }
         except Exception as e:
             print(f"Gemini error (continuing without AI): {e}")
@@ -651,7 +834,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         ud_props = ep["underdog_props"]
         ud_game = ep.get("underdog_game", {})
         nba_stats = ep.get("nba_stats")
-        player_averages = ep.get("player_averages", {"pts": 0, "reb": 0, "ast": 0})
+        player_averages = ep.get(
+            "player_averages", {"pts": 0, "reb": 0, "ast": 0})
 
         # Get player info (prefer NBA API data if available)
         if nba_stats and nba_stats.get("team_code") and nba_stats["team_code"] != "UNK":
@@ -680,7 +864,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 
         # Show full matchup
         abbr_title = ud_game.get("abbreviated_title", "")
-        opponent = abbr_title if abbr_title else ud_game.get("short_title", "TBD")
+        opponent = abbr_title if abbr_title else ud_game.get(
+            "short_title", "TBD")
 
         # Game time
         game_time = "Tonight"
@@ -688,17 +873,23 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         scheduled = ud_game.get("scheduled_at", "")
         if scheduled:
             try:
-                game_dt = datetime.datetime.fromisoformat(scheduled.replace('Z', '+00:00'))
+                game_dt = datetime.datetime.fromisoformat(
+                    scheduled.replace('Z', '+00:00'))
                 game_time = game_dt.strftime("%I:%M %p UTC")
                 game_time_utc = game_dt.isoformat()
             except:
                 pass
 
-        # AI analysis for this player
-        player_ai = ai_by_name.get(player_name.lower(), {})
+        # AI analysis is now per-prop, handled below in the prop loop
 
-        # Create individual prop cards for main stats only
-        priority_stats = ["Points", "Rebounds", "Assists", "3-Pointers Made", "Pts + Rebs + Asts"]
+        # Create individual prop cards for priority stats only
+        priority_stats = ["Points", "Rebounds", "Assists",
+                          "3-Pointers Made", "Pts + Rebs + Asts"]
+
+        # Get last 5 games for hit rate calculation
+        last5_games = []
+        if nba_stats:
+            last5_games = nba_stats.get("last5Games", [])
 
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
@@ -707,24 +898,29 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 continue
 
             # Calculate ranking score for this specific prop
-            prop_score, edge, player_avg, urgency_score = calculate_prop_ranking_score(
+            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc
             )
 
+            # Calculate hit rate for this prop
+            line = float(prop.get("line", 0))
+            hit_rate = calculate_hit_rate(last5_games, stat_name, line)
+
             # Format stat name
-            short_name = stat_name
-            short_name = short_name.replace("Points", "Pts")
-            short_name = short_name.replace("Rebounds", "Reb")
-            short_name = short_name.replace("Assists", "Ast")
-            short_name = short_name.replace("3-Pointers Made", "3PM")
+            short_name = stat_name.replace(
+                "Points", "Pts").replace("Rebounds", "Reb")
+            short_name = short_name.replace(
+                "Assists", "Ast").replace("3-Pointers Made", "3PM")
             short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
 
             try:
-                over_odds = int(str(prop.get("over_american", "-110")).replace("+", ""))
+                over_odds = int(
+                    str(prop.get("over_american", "-110")).replace("+", ""))
             except:
                 over_odds = -110
             try:
-                under_odds = int(str(prop.get("under_american", "-110")).replace("+", ""))
+                under_odds = int(
+                    str(prop.get("under_american", "-110")).replace("+", ""))
             except:
                 under_odds = -110
 
@@ -751,6 +947,13 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 "edge": edge,
                 "playerAverage": player_avg,
                 "urgencyScore": urgency_score,
+                "recommendedDirection": recommended_direction,
+                # Hit rate data (last 5 games)
+                "hitRate": {
+                    "hits": hit_rate["hits"],
+                    "total": hit_rate["total"],
+                    "results": hit_rate["results"]
+                },
                 # Will be set after sorting
                 "section": "topPicks",
                 "featured": False,
@@ -760,7 +963,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 "playerAverages": {
                     "pts": player_averages.get("pts", 0),
                     "reb": player_averages.get("reb", 0),
-                    "ast": player_averages.get("ast", 0)
+                    "ast": player_averages.get("ast", 0),
+                    "fg3m": player_averages.get("fg3m", 0)
                 }
             }
 
@@ -772,30 +976,54 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     # Sort by ranking score (highest first)
     all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
 
-    # Mark top 15 as "topPicks" featured
-    top_picks_count = min(15, len(all_prop_cards))
-    for i, card in enumerate(all_prop_cards[:top_picks_count]):
-        card["section"] = "topPicks"
+    # "forYou" section: top 5 best-ranked props for 5-leg parlay builders
+    for_you_count = min(5, len(all_prop_cards))
+    for i, card in enumerate(all_prop_cards[:for_you_count]):
+        card["section"] = "forYou"
         card["featured"] = True
-        # Add AI analysis for featured props
-        player_ai = ai_by_name.get(card["name"].lower(), {})
-        card["trending"] = player_ai.get("trending", "up")
+
+        # Add AI analysis for this specific prop (per-prop lookup)
+        prop_key = f"{card['name'].lower()}_{card['statNameFull'].lower()}"
+        prop_ai = ai_by_prop.get(prop_key, {})
+
+        card["trending"] = prop_ai.get("trending", "up")
         if card["trending"] not in ["up", "hot"]:
             card["trending"] = "up"
-        card["ai_analysis"] = player_ai.get("analysis", "")
+        card["ai_analysis"] = prop_ai.get("analysis", "")
 
-    # Find props with high urgency for "forYou" section (games starting soon)
-    for_you_count = 0
-    for card in all_prop_cards[top_picks_count:]:
-        if card.get("urgencyScore", 0) >= 7 and for_you_count < 10:
-            card["section"] = "forYou"
-            card["featured"] = True
-            for_you_count += 1
-        else:
-            card["section"] = "allProps"
-            card["featured"] = False
+        # Add AI recommendation direction for this prop
+        if prop_ai.get("direction"):
+            card["aiRecommended"] = prop_ai.get("direction")
 
-    print(f"✓ Categorized: {top_picks_count} topPicks, {for_you_count} forYou")
+    # "topPicks" section: props 6-20 (next best after forYou)
+    top_picks_start = for_you_count
+    top_picks_end = min(20, len(all_prop_cards))
+    top_picks_count = top_picks_end - top_picks_start
+
+    for i, card in enumerate(all_prop_cards[top_picks_start:top_picks_end]):
+        card["section"] = "topPicks"
+        card["featured"] = True
+
+        # Add AI analysis for this specific prop (per-prop lookup)
+        prop_key = f"{card['name'].lower()}_{card['statNameFull'].lower()}"
+        prop_ai = ai_by_prop.get(prop_key, {})
+
+        card["trending"] = prop_ai.get("trending", "up")
+        if card["trending"] not in ["up", "hot"]:
+            card["trending"] = "up"
+        card["ai_analysis"] = prop_ai.get("analysis", "")
+
+        # Add AI recommendation direction for this prop
+        if prop_ai.get("direction"):
+            card["aiRecommended"] = prop_ai.get("direction")
+
+    # Mark remaining cards as allProps
+    for card in all_prop_cards[top_picks_end:]:
+        card["section"] = "allProps"
+        card["featured"] = False
+
+    print(
+        f"✓ Categorized: {for_you_count} forYou (top 5), {top_picks_count} topPicks")
 
     # 8. Clear old props and write to Firestore
     db = firestore.client()
@@ -891,12 +1119,14 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
 
     # Build individual prop cards
     all_prop_cards = []
-    priority_stats = ["Points", "Rebounds", "Assists", "3-Pointers Made", "Pts + Rebs + Asts"]
+    priority_stats = ["Points", "Rebounds", "Assists",
+                      "3-Pointers Made", "Pts + Rebs + Asts"]
 
     for player_data in underdog_data["players"]:
         player = player_data["player"]
         player_id = player.get("id", str(uuid.uuid4()))
-        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
+        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(
+        )
         ud_game = player_data.get("game", {})
         team_abbr = player_data.get("team_abbr", "")
         if not team_abbr:
@@ -906,7 +1136,8 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 team_abbr = away
 
         abbr_title = ud_game.get("abbreviated_title", "")
-        opponent = abbr_title if abbr_title else ud_game.get("short_title", "TBD")
+        opponent = abbr_title if abbr_title else ud_game.get(
+            "short_title", "TBD")
 
         game_time = "Tonight"
         game_time_utc = None
@@ -926,21 +1157,25 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 continue
 
             # Calculate ranking score for this prop (no NBA stats in scheduled run)
-            prop_score, edge, player_avg, urgency_score = calculate_prop_ranking_score(
-                prop, {"pts": 0, "reb": 0, "ast": 0}, game_time_utc
+            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
+                prop, {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0}, game_time_utc
             )
 
             # Format stat name
-            short_name = stat_name.replace("Points", "Pts").replace("Rebounds", "Reb")
-            short_name = short_name.replace("Assists", "Ast").replace("3-Pointers Made", "3PM")
+            short_name = stat_name.replace(
+                "Points", "Pts").replace("Rebounds", "Reb")
+            short_name = short_name.replace(
+                "Assists", "Ast").replace("3-Pointers Made", "3PM")
             short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
 
             try:
-                over_odds = int(str(prop.get("over_american", "-110")).replace("+", ""))
+                over_odds = int(
+                    str(prop.get("over_american", "-110")).replace("+", ""))
             except:
                 over_odds = -110
             try:
-                under_odds = int(str(prop.get("under_american", "-110")).replace("+", ""))
+                under_odds = int(
+                    str(prop.get("under_american", "-110")).replace("+", ""))
             except:
                 under_odds = -110
 
@@ -965,11 +1200,14 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "edge": edge,
                 "playerAverage": player_avg,
                 "urgencyScore": urgency_score,
+                "recommendedDirection": recommended_direction,
+                # Empty for scheduled (no NBA API)
+                "hitRate": {"hits": 0, "total": 0, "results": []},
                 "section": "topPicks",
                 "featured": False,
                 "trending": "up",
                 "ai_analysis": "",
-                "playerAverages": {"pts": 0, "reb": 0, "ast": 0}
+                "playerAverages": {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0}
             }
             all_prop_cards.append(prop_card)
 
@@ -997,4 +1235,5 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         card["id"] = doc_id
         db.collection("props").document(doc_id).set(card)
 
-    print(f"=== SCHEDULED REFRESH COMPLETE: {len(all_prop_cards)} props, {top_picks_count} topPicks, {for_you_count} forYou ===")
+    print(
+        f"=== SCHEDULED REFRESH COMPLETE: {len(all_prop_cards)} props, {top_picks_count} topPicks, {for_you_count} forYou ===")

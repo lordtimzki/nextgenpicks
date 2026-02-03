@@ -45,15 +45,15 @@ class FirebaseService: DataService {
         }
     }
 
-    /// Fetch "For You" section props (urgency-based, personalized)
+    /// Fetch "For You" section props (top 5 best-ranked for parlay builders)
     func fetchForYouProps() async throws -> [PlayerCardData] {
         print("🔥 FirebaseService: Fetching 'For You' props...")
 
         do {
             let snapshot = try await db.collection("props")
                 .whereField("section", isEqualTo: "forYou")
-                .order(by: "urgencyScore", descending: true)
-                .limit(to: 10)
+                .order(by: "rankingScore", descending: true)
+                .limit(to: 5)
                 .getDocuments()
 
             print("🔥 FirebaseService: Found \(snapshot.documents.count) 'For You' props")
