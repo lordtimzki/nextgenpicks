@@ -16,72 +16,124 @@ class FirebaseService: DataService {
         }
     }
     
+    /// Fetch top picks props (highest ranked individual prop cards)
     func fetchLiveProps() async throws -> [PlayerCardData] {
-        print("🔥 FirebaseService: Fetching live props...")
+        print("🔥 FirebaseService: Fetching top picks props...")
 
         do {
-            // Temporarily fetch ALL props (no filter) to debug
+            // Fetch "topPicks" section, ordered by ranking score (highest first)
+            // Note: This query requires a composite index on (section, rankingScore)
             let snapshot = try await db.collection("props")
-                .limit(to: 30)
+                .whereField("section", isEqualTo: "topPicks")
+                .order(by: "rankingScore", descending: true)
+                .limit(to: 15)
                 .getDocuments()
 
-            print("🔥 FirebaseService: Found \(snapshot.documents.count) documents")
+            print("🔥 FirebaseService: Found \(snapshot.documents.count) top picks")
 
             if snapshot.documents.isEmpty {
-                print("⚠️ FirebaseService: No documents found in 'props' collection!")
-                print("⚠️ Check: 1) Firebase project ID matches 2) Data was written 3) Security rules allow read")
+                print("⚠️ FirebaseService: No top picks found, falling back to all props...")
+                return try await fetchAllProps()
             }
 
-            var results: [PlayerCardData] = []
-            for doc in snapshot.documents {
-                print("📄 Processing doc: \(doc.documentID)")
-                do {
-                    let data = try doc.data(as: PlayerCardData.self)
-                    results.append(data)
-                    print("✅ Decoded: \(data.name)")
-                } catch let DecodingError.keyNotFound(key, context) {
-                    print("❌ Missing key '\(key.stringValue)' in doc \(doc.documentID)")
-                    print("   Context: \(context.debugDescription)")
-                    print("   Raw data keys: \(doc.data().keys)")
-                } catch let DecodingError.typeMismatch(type, context) {
-                    print("❌ Type mismatch for \(type) in doc \(doc.documentID)")
-                    print("   Path: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
-                    print("   Context: \(context.debugDescription)")
-                } catch let DecodingError.valueNotFound(type, context) {
-                    print("❌ Value not found for \(type) in doc \(doc.documentID)")
-                    print("   Path: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
-                } catch {
-                    print("❌ Failed to decode document \(doc.documentID): \(error)")
-                    print("   Raw data: \(doc.data())")
-                }
-            }
-
-            print("🔥 FirebaseService: Successfully decoded \(results.count) players")
+            let results = decodeDocuments(snapshot.documents)
+            print("🔥 FirebaseService: Successfully decoded \(results.count) top picks")
             return results
         } catch {
             print("🔥❌ FirebaseService ERROR: \(error)")
             throw error
         }
     }
+
+    /// Fetch "For You" section props (urgency-based, personalized)
+    func fetchForYouProps() async throws -> [PlayerCardData] {
+        print("🔥 FirebaseService: Fetching 'For You' props...")
+
+        do {
+            let snapshot = try await db.collection("props")
+                .whereField("section", isEqualTo: "forYou")
+                .order(by: "urgencyScore", descending: true)
+                .limit(to: 10)
+                .getDocuments()
+
+            print("🔥 FirebaseService: Found \(snapshot.documents.count) 'For You' props")
+            return decodeDocuments(snapshot.documents)
+        } catch {
+            print("🔥❌ FirebaseService fetchForYouProps ERROR: \(error)")
+            throw error
+        }
+    }
+
+    /// Fetch both sections for the feed
+    func fetchFeedProps() async throws -> (topPicks: [PlayerCardData], forYou: [PlayerCardData]) {
+        async let topPicks = fetchLiveProps()
+        async let forYou = fetchForYouProps()
+
+        return try await (topPicks, forYou)
+    }
+
+    /// Fallback method to fetch all props without section filter
+    private func fetchAllProps() async throws -> [PlayerCardData] {
+        let snapshot = try await db.collection("props")
+            .order(by: "rankingScore", descending: true)
+            .limit(to: 30)
+            .getDocuments()
+
+        return decodeDocuments(snapshot.documents)
+    }
+
+    /// Helper to decode documents with detailed error logging
+    private func decodeDocuments(_ documents: [QueryDocumentSnapshot]) -> [PlayerCardData] {
+        var results: [PlayerCardData] = []
+        for doc in documents {
+            do {
+                let data = try doc.data(as: PlayerCardData.self)
+                results.append(data)
+            } catch let DecodingError.keyNotFound(key, context) {
+                print("❌ Missing key '\(key.stringValue)' in doc \(doc.documentID)")
+                print("   Context: \(context.debugDescription)")
+            } catch let DecodingError.typeMismatch(type, context) {
+                print("❌ Type mismatch for \(type) in doc \(doc.documentID)")
+                print("   Path: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
+            } catch {
+                print("❌ Failed to decode document \(doc.documentID): \(error)")
+            }
+        }
+        return results
+    }
     
     func searchPlayers(query: String) async throws -> [PlayerCardData] {
-        // Defines a simple search. For advanced search (fuzzy matching), 
-        // usually rely on Algolia or a separate index, but simple prefix match works for now.
-        // Note: Firestore doesn't do native substring search easily without 3rd party.
-        // We will simulate it by fetching or using a specific "keywords" array if implemented.
-        // For now, let's assume we fetch a reasonable list or use a specific search collection.
-        
-        // MVP: Fetch top players and filter locally, or use exact match if ID.
-        // real implementation would likely use: .whereField("name", isGreaterThanOrEqualTo: query)
-        
-        let snapshot = try await db.collection("players")
+        // Search across ALL players in props collection (not just featured)
+        // Uses prefix matching on player name
+        let snapshot = try await db.collection("props")
             .whereField("name", isGreaterThanOrEqualTo: query)
             .whereField("name", isLessThan: query + "\u{f8ff}")
-            .limit(to: 10)
+            .limit(to: 20)
             .getDocuments()
-            
+
         return snapshot.documents.compactMap { doc in
             try? doc.data(as: PlayerCardData.self)
         }
+    }
+
+    /// Search all players without the featured filter
+    /// Use this for the Search tab to allow users to find any player
+    func searchAllPlayers(query: String) async throws -> [PlayerCardData] {
+        print("🔍 FirebaseService: Searching for '\(query)'...")
+
+        // Search in props collection with prefix match on name
+        let snapshot = try await db.collection("props")
+            .whereField("name", isGreaterThanOrEqualTo: query)
+            .whereField("name", isLessThan: query + "\u{f8ff}")
+            .order(by: "name")
+            .limit(to: 20)
+            .getDocuments()
+
+        let results = snapshot.documents.compactMap { doc in
+            try? doc.data(as: PlayerCardData.self)
+        }
+
+        print("🔍 FirebaseService: Found \(results.count) players matching '\(query)'")
+        return results
     }
 }

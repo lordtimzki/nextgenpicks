@@ -57,20 +57,50 @@ struct FeedView: View {
                             }
                             .padding(.horizontal)
                             
-                            // 3. Featured Props Grid
+                            // 3. Top Picks Section (highest ranked props)
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Featured Props")
+                                Text("Top Picks")
                                     .font(.title3)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal)
-                                
+
                                 LazyVGrid(columns: columns, spacing: 12) {
-                                    ForEach(vm.featuredProps) { player in
-                                        PlayerPropCard(player: player)
+                                    ForEach(vm.featuredProps) { prop in
+                                        PlayerPropCard(player: prop)
                                     }
                                 }
                                 .padding(.horizontal)
+                            }
+
+                            // 4. For You Section (urgency-based, personalized)
+                            if !vm.forYouProps.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("For You")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+
+                                        Spacer()
+
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "clock.fill")
+                                                .font(.caption)
+                                            Text("Starting Soon")
+                                                .font(.caption)
+                                        }
+                                        .foregroundStyle(Color.brandOrange)
+                                    }
+                                    .padding(.horizontal)
+
+                                    LazyVGrid(columns: columns, spacing: 12) {
+                                        ForEach(vm.forYouProps) { prop in
+                                            PlayerPropCard(player: prop)
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
                             }
                         }
                         .padding(.bottom, 20)

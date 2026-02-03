@@ -3,6 +3,7 @@ import SwiftUI
 struct PlayerPropCard: View {
     let player: PlayerCardData
     @State private var showingMoreMarkets: Bool = false
+    @State private var showingPlayerDetail: Bool = false
 
     // Convert UTC time to user's local timezone with day of week
     private var formattedGameTime: String {
@@ -168,7 +169,7 @@ struct PlayerPropCard: View {
             )
             
             // 3. Main Prop Section
-            if let mainProp = player.props.first {
+            if let mainProp = player.mainProp {
                 VStack(spacing: 12) {
                     VStack(spacing: 2) {
                         Text(mainProp.statName)
@@ -179,7 +180,18 @@ struct PlayerPropCard: View {
                             .fontWeight(.bold)
                             .foregroundStyle(.white)
                     }
-                    
+
+                    // Show edge indicator if available
+                    if let edge = player.edge, let avg = player.playerAverage, edge != 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: edge > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                                .font(.caption2)
+                            Text("Avg: \(String(format: "%.1f", avg))")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(edge > 0 ? Color.brandEmerald : Color.brandRed)
+                    }
+
                     HStack(spacing: 8) {
                         PropButton(label: "Over", odds: mainProp.overOdds, color: .brandEmerald)
                         PropButton(label: "Under", odds: mainProp.underOdds, color: .brandRed)
@@ -187,12 +199,12 @@ struct PlayerPropCard: View {
                 }
                 .padding(12)
             }
-            
-            // 4. More Markets Button
-            if player.props.count > 1 {
+
+            // 4. More Markets Button (only show for legacy multi-prop cards)
+            if let props = player.props, props.count > 1 {
                 Button(action: { showingMoreMarkets = true }) {
                     HStack(spacing: 4) {
-                        Text("+\(player.props.count - 1) More Markets")
+                        Text("+\(props.count - 1) More Markets")
                         Image(systemName: "chevron.right")
                     }
                     .font(.caption)
@@ -277,8 +289,13 @@ struct MoreMarketsSheet: View {
 
     private var propsList: some View {
         VStack(spacing: 12) {
-            ForEach(player.props) { prop in
-                PropRow(prop: prop)
+            if let props = player.props {
+                ForEach(props) { prop in
+                    PropRow(prop: prop)
+                }
+            } else if let mainProp = player.mainProp {
+                // For single-prop cards, just show the one prop
+                PropRow(prop: mainProp)
             }
         }
         .padding(.horizontal)
