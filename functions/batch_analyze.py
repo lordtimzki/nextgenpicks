@@ -82,6 +82,7 @@ def get_underdog_nba_props() -> dict:
     games_by_id = {g["id"]: g for g in games}
 
     # Build team_id -> abbreviation mapping from games
+    # Use string keys to avoid type mismatches
     team_id_to_abbr = {}
     for game in games:
         abbr_title = game.get("abbreviated_title", "")
@@ -90,9 +91,9 @@ def get_underdog_nba_props() -> dict:
             away_team_id = game.get("away_team_id")
             home_team_id = game.get("home_team_id")
             if away_team_id:
-                team_id_to_abbr[away_team_id] = away_abbr
+                team_id_to_abbr[str(away_team_id)] = away_abbr
             if home_team_id:
-                team_id_to_abbr[home_team_id] = home_abbr
+                team_id_to_abbr[str(home_team_id)] = home_abbr
 
     # Group lines by player
     players_with_props = {}
@@ -115,11 +116,21 @@ def get_underdog_nba_props() -> dict:
         game = games_by_id.get(match_id, {})
 
         if player_id not in players_with_props:
+            # Try team_id lookup with string key, fallback to extracting from game title
+            team_abbr = team_id_to_abbr.get(str(team_id), "")
+            if not team_abbr and game:
+                # Try to infer from game abbreviated_title
+                abbr_title = game.get("abbreviated_title", "")
+                if " @ " in abbr_title:
+                    away, home = abbr_title.split(" @ ")
+                    # If only two teams in game, we can't determine which is the player's
+                    # but at least we have the matchup context
+                    team_abbr = ""  # Will be resolved later with opponent display
             players_with_props[player_id] = {
                 "player": player,
                 "game": game,
                 "team_id": team_id,
-                "team_abbr": team_id_to_abbr.get(team_id, ""),
+                "team_abbr": team_abbr,
                 "props": []
             }
 
@@ -250,8 +261,8 @@ def get_player_stats_quick(player_name: str) -> dict | None:
             "id": int(player_id),
             "name": player['full_name'],
             "position": position,
-            "team_code": "UNK",
-            "team_name": "Unknown",
+            "team_code": "",  # Empty so caller can use other sources
+            "team_name": "",
             "image": f"https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png",
             "averages": {"pts": 0, "reb": 0, "ast": 0}
         }
@@ -483,7 +494,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             continue
 
         # Get player info (prefer NBA API data if available)
-        if nba_stats:
+        if nba_stats and nba_stats.get("team_code") and nba_stats["team_code"] != "UNK":
             player_id = nba_stats["id"]
             player_name = nba_stats["name"]
             team_abbr = nba_stats["team_code"]
@@ -493,20 +504,28 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             player_id = ud_player.get("id", str(uuid.uuid4()))
             player_name = ep["name"]
             # Use team abbreviation from Underdog data
-            team_abbr = ep.get("underdog_team_abbr", "UNK")
+            team_abbr = ep.get("underdog_team_abbr", "")
+            # If still no team, try to get from NBA stats if available
+            if not team_abbr and nba_stats and nba_stats.get("team_code") and nba_stats["team_code"] != "UNK":
+                team_abbr = nba_stats["team_code"]
+            # Try to extract from game title as last resort
+            if not team_abbr:
+                abbr_title = ud_game.get("abbreviated_title", "")
+                if " @ " in abbr_title:
+                    away, home = abbr_title.split(" @ ")
+                    # Use the first team as a reasonable guess (away team)
+                    team_abbr = away
             position = ud_player.get("position_name", "N/A")
+            if nba_stats:
+                position = nba_stats.get("position", position)
             image_url = ud_player.get("image_url", "")
+            if nba_stats and nba_stats.get("image"):
+                image_url = nba_stats["image"]
 
-        # Determine opponent based on player's team
+        # Show full matchup (e.g., "LAL @ BKN")
         abbr_title = ud_game.get("abbreviated_title", "")
-        if " @ " in abbr_title:
-            away, home = abbr_title.split(" @ ")
-            if team_abbr == away:
-                opponent = f"@ {home}"
-            elif team_abbr == home:
-                opponent = f"vs {away}"
-            else:
-                opponent = abbr_title
+        if abbr_title:
+            opponent = abbr_title
         else:
             opponent = ud_game.get("short_title", "TBD")
 
@@ -615,22 +634,22 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(
         )
         ud_game = player_data.get("game", {})
-        team_abbr = player_data.get("team_abbr", "UNK")
+        team_abbr = player_data.get("team_abbr", "")
+        # Try to extract from game title if team_abbr is empty
+        if not team_abbr:
+            abbr_title = ud_game.get("abbreviated_title", "")
+            if " @ " in abbr_title:
+                away, home = abbr_title.split(" @ ")
+                team_abbr = away  # Use away team as fallback
 
         ios_props = format_props_for_ios(player_data["props"])
         if not ios_props:
             continue
 
-        # Determine opponent based on player's team
+        # Show full matchup (e.g., "LAL @ BKN")
         abbr_title = ud_game.get("abbreviated_title", "")
-        if " @ " in abbr_title:
-            away, home = abbr_title.split(" @ ")
-            if team_abbr == away:
-                opponent = f"@ {home}"
-            elif team_abbr == home:
-                opponent = f"vs {away}"
-            else:
-                opponent = abbr_title
+        if abbr_title:
+            opponent = abbr_title
         else:
             opponent = ud_game.get("short_title", "TBD")
 

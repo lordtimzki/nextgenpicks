@@ -34,17 +34,23 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
         # 3. Opponent Analysis
         opponent_name = "Unknown"
         opponent_stats = None
-        
+        matchup_display = "TBD"
+
         if odds_data.get("game_info"):
             game = odds_data["game_info"]
             player_team = player_data["team_name"]
-            
-            # Determine opponent
+            player_team_code = player_data["team_code"]
+
+            # Determine opponent and matchup display
             if player_team.lower() in game["home"].lower():
                 opponent_name = game["away"]
+                # Player is home team, show "AWAY @ HOME"
+                matchup_display = f"{opponent_name.split()[-1][:3].upper()} @ {player_team_code}"
             else:
                 opponent_name = game["home"]
-            
+                # Player is away team, show "AWAY @ HOME"
+                matchup_display = f"{player_team_code} @ {opponent_name.split()[-1][:3].upper()}"
+
             opponent_stats = get_team_stats(opponent_name)
         
         # 4. Days Rest Calculation
@@ -226,7 +232,7 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
             "position": player_data.get("position", "N/A"),  # Use actual position from NBA API
             "imageName": player_data["image"], # Sends URL, App needs to handle it or we use placeholder
             "props": ios_props,
-            "opponent": opponent_name,
+            "opponent": matchup_display,  # Full matchup like "LAL @ BKN"
             "gameTime": game_time,
             "trending": trending,
             "last_updated": datetime.datetime.now().isoformat()

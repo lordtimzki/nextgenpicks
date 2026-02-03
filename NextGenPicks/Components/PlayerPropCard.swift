@@ -30,22 +30,24 @@ struct PlayerPropCard: View {
         let calendar = Calendar.current
         let displayFormatter = DateFormatter()
         displayFormatter.timeZone = TimeZone.current
+        displayFormatter.dateFormat = "h:mm a"
+        let timeString = displayFormatter.string(from: date)
 
         // Check if the game is today
         if calendar.isDateInToday(date) {
-            displayFormatter.dateFormat = "h:mm a"
-            return "Today \(displayFormatter.string(from: date))"
+            return timeString
         }
 
         // Check if the game is tomorrow
         if calendar.isDateInTomorrow(date) {
-            displayFormatter.dateFormat = "h:mm a"
-            return "Tomorrow \(displayFormatter.string(from: date))"
+            return "Tmrw \(timeString)"
         }
 
-        // Otherwise show day of week and time
-        displayFormatter.dateFormat = "EEE h:mm a"
-        return displayFormatter.string(from: date)
+        // Otherwise show short day of week and time
+        displayFormatter.dateFormat = "E"
+        let dayString = displayFormatter.string(from: date)
+        displayFormatter.dateFormat = "h:mm a"
+        return "\(dayString) \(timeString)"
     }
 
     var body: some View {
@@ -132,33 +134,30 @@ struct PlayerPropCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
                 
-                // Player Info (Bottom Left)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(player.teamAbbr)
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                    Text(player.name)
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                }
-                .padding(12)
+                // Player Name (Bottom Left)
+                Text(player.name)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .padding(12)
             }
             
             // 2. Game Info Bar
-            HStack(spacing: 8) {
-                Image(systemName: "clock")
-                    .font(.caption2)
-                Text("\(player.opponent) • \(formattedGameTime)")
+            HStack {
+                Text(player.opponent)
                     .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                    Text(formattedGameTime)
+                        .font(.caption)
+                }
             }
             .foregroundStyle(.gray)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(Color.white.opacity(0.03))
             .overlay(
