@@ -238,9 +238,9 @@ struct PlayerPropCard: View {
                     // Recommendation indicator (combines AI + algorithmic recommendation)
                     if let rec = recommendation {
                         HStack(spacing: 4) {
-                            Image(systemName: player.aiRecommended != nil ? "sparkles" : "chart.line.uptrend.xyaxis")
+                            Image(systemName: "chart.line.uptrend.xyaxis")
                                 .font(.caption2)
-                            Text(player.aiRecommended != nil ? "AI Pick: \(rec)" : "Lean: \(rec)")
+                            Text("Lean: \(rec)")
                                 .font(.caption2)
                                 .fontWeight(.bold)
                         }
@@ -248,61 +248,27 @@ struct PlayerPropCard: View {
                         .padding(.top, 2)
                     }
 
-                    // Over/Under buttons with recommendation highlight
+                    // Over/Under buttons with recommendation highlight and AI indicator
                     HStack(spacing: 8) {
                         PropButton(
                             label: "Over",
                             odds: mainProp.overOdds,
                             color: .brandEmerald,
-                            isRecommended: recommendation == "Over"
+                            isRecommended: recommendation == "Over",
+                            hasAIAnalysis: recommendation == "Over" && player.ai_analysis != nil && !player.ai_analysis!.isEmpty,
+                            onAITap: { showingAIAnalysis = true }
                         )
                         PropButton(
                             label: "Under",
                             odds: mainProp.underOdds,
                             color: .brandRed,
-                            isRecommended: recommendation == "Under"
+                            isRecommended: recommendation == "Under",
+                            hasAIAnalysis: recommendation == "Under" && player.ai_analysis != nil && !player.ai_analysis!.isEmpty,
+                            onAITap: { showingAIAnalysis = true }
                         )
                     }
                 }
                 .padding(12)
-
-                // AI Analysis expandable section
-                if let analysis = player.ai_analysis, !analysis.isEmpty {
-                    VStack(spacing: 0) {
-                        Divider()
-                            .background(Color.border)
-
-                        Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showingAIAnalysis.toggle() } }) {
-                            HStack {
-                                Image(systemName: "sparkles")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.brandPurple)
-                                Text("AI Analysis")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(Color.secondaryText)
-                                Spacer()
-                                Image(systemName: showingAIAnalysis ? "chevron.up" : "chevron.down")
-                                    .font(.caption2)
-                                    .foregroundStyle(Color.secondaryText)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.plain)
-
-                        if showingAIAnalysis {
-                            Text(analysis)
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.9))
-                                .multilineTextAlignment(.leading)
-                                .padding(.horizontal, 12)
-                                .padding(.bottom, 12)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-                    }
-                    .background(Color.white.opacity(0.02))
-                }
             }
 
             // 4. More Markets Button (only show for legacy multi-prop cards)
@@ -326,6 +292,17 @@ struct PlayerPropCard: View {
         )
         .sheet(isPresented: $showingMoreMarkets) {
             MoreMarketsSheet(player: player)
+        }
+        .sheet(isPresented: $showingAIAnalysis) {
+            if let analysis = player.ai_analysis, !analysis.isEmpty {
+                AIAnalysisSheet(
+                    playerName: player.name,
+                    statName: player.mainProp?.statName ?? "",
+                    line: player.mainProp?.line ?? 0,
+                    recommendation: recommendation,
+                    analysis: analysis
+                )
+            }
         }
     }
 }
@@ -445,15 +422,21 @@ struct PropButton: View {
     let color: Color
     var size: ButtonSize = .regular
     var isRecommended: Bool = false
+    var hasAIAnalysis: Bool = false
+    var onAITap: (() -> Void)? = nil
 
     enum ButtonSize {
         case regular, small
     }
 
     var body: some View {
-        Button(action: {}) {
-            VStack(spacing: 0) {
-                HStack(spacing: 2) {
+        Button(action: {
+            if hasAIAnalysis, let tap = onAITap {
+                tap()
+            }
+        }) {
+            VStack(spacing: 2) {
+                HStack(spacing: 3) {
                     if isRecommended {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 8))
@@ -462,6 +445,13 @@ struct PropButton: View {
                     Text(label)
                         .font(.caption2)
                         .foregroundStyle(isRecommended ? color : .gray)
+
+                    // AI Analysis indicator on the recommended button
+                    if hasAIAnalysis {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color.brandPurple)
+                    }
                 }
                 Text(odds > 0 ? "+\(odds)" : "\(odds)")
                     .font(size == .regular ? .subheadline : .caption)
@@ -477,5 +467,81 @@ struct PropButton: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
+    }
+}
+
+// AI Analysis Sheet
+struct AIAnalysisSheet: View {
+    let playerName: String
+    let statName: String
+    let line: Double
+    let recommendation: String?
+    let analysis: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.title2)
+                            .foregroundStyle(Color.brandPurple)
+                        Text("AI Analysis")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                    }
+
+                    Text("\(playerName) - \(statName) \(String(format: "%.1f", line))")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondaryText)
+                }
+
+                // Recommendation badge
+                if let rec = recommendation {
+                    HStack(spacing: 6) {
+                        Image(systemName: rec == "Over" ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                            .font(.body)
+                        Text("Recommended: \(rec)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(rec == "Over" ? Color.brandEmerald : Color.brandRed)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background((rec == "Over" ? Color.brandEmerald : Color.brandRed).opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
+                // Analysis text
+                Text(analysis)
+                    .font(.body)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineSpacing(4)
+
+                Spacer()
+
+                // Disclaimer
+                Text("AI analysis is for informational purposes only. Always do your own research.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.background)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(Color.brandEmerald)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }
