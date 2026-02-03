@@ -91,11 +91,12 @@ struct PlayerCardData: Identifiable, Codable {
     var ai_analysis: String?
     var source: String?
     var last_updated: String?
+    var gameTimeUTC: String?  // ISO timestamp for local time conversion
 
     // Regular initializer for programmatic creation (mocks, previews)
     init(id: Any, name: String, teamAbbr: String, position: String, imageName: String,
          props: [PlayerProp], opponent: String, gameTime: String, trending: TrendingStatus,
-         ai_analysis: String? = nil, source: String? = nil, last_updated: String? = nil) {
+         ai_analysis: String? = nil, source: String? = nil, last_updated: String? = nil, gameTimeUTC: String? = nil) {
         // Accept Int or String for id
         if let intId = id as? Int {
             self.id = String(intId)
@@ -115,6 +116,7 @@ struct PlayerCardData: Identifiable, Codable {
         self.ai_analysis = ai_analysis
         self.source = source
         self.last_updated = last_updated
+        self.gameTimeUTC = gameTimeUTC
     }
 
     // Custom decoder to handle id being either Int or String in Firebase
@@ -141,5 +143,6 @@ struct PlayerCardData: Identifiable, Codable {
         self.ai_analysis = try container.decodeIfPresent(String.self, forKey: .ai_analysis)
         self.source = try container.decodeIfPresent(String.self, forKey: .source)
         self.last_updated = try container.decodeIfPresent(String.self, forKey: .last_updated)
+        self.gameTimeUTC = try container.decodeIfPresent(String.self, forKey: .gameTimeUTC)
     }
 }

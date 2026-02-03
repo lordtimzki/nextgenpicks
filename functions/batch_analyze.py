@@ -46,7 +46,8 @@ def get_underdog_nba_props() -> dict:
     """
     print("=== Fetching Underdog Fantasy Props ===")
 
-    status, data = fetch_json_httpx("https://api.underdogfantasy.com/v1/over_under_lines")
+    status, data = fetch_json_httpx(
+        "https://api.underdogfantasy.com/v1/over_under_lines")
 
     if status != 200 or not data:
         print(f"ERROR: Failed to fetch Underdog data (status: {status})")
@@ -62,20 +63,36 @@ def get_underdog_nba_props() -> dict:
     print(f"  Total lines: {len(lines)}")
 
     # Filter to NBA only
-    nba_players = {p["id"]: p for p in players_raw if p.get("sport_id") == "NBA"}
+    nba_players = {
+        p["id"]: p for p in players_raw if p.get("sport_id") == "NBA"}
     print(f"  NBA players: {len(nba_players)}")
 
     # Create appearance -> player mapping
     appearance_to_player = {}
     appearance_to_match = {}
+    appearance_to_team_id = {}
     for app in appearances:
         player_id = app.get("player_id")
         if player_id in nba_players:
             appearance_to_player[app["id"]] = player_id
             appearance_to_match[app["id"]] = app.get("match_id")
+            appearance_to_team_id[app["id"]] = app.get("team_id", "")
 
     # Create game lookup
     games_by_id = {g["id"]: g for g in games}
+
+    # Build team_id -> abbreviation mapping from games
+    team_id_to_abbr = {}
+    for game in games:
+        abbr_title = game.get("abbreviated_title", "")
+        if " @ " in abbr_title:
+            away_abbr, home_abbr = abbr_title.split(" @ ")
+            away_team_id = game.get("away_team_id")
+            home_team_id = game.get("home_team_id")
+            if away_team_id:
+                team_id_to_abbr[away_team_id] = away_abbr
+            if home_team_id:
+                team_id_to_abbr[home_team_id] = home_abbr
 
     # Group lines by player
     players_with_props = {}
@@ -94,12 +111,15 @@ def get_underdog_nba_props() -> dict:
         player_id = appearance_to_player[app_id]
         player = nba_players[player_id]
         match_id = appearance_to_match.get(app_id)
+        team_id = appearance_to_team_id.get(app_id, "")
         game = games_by_id.get(match_id, {})
 
         if player_id not in players_with_props:
             players_with_props[player_id] = {
                 "player": player,
                 "game": game,
+                "team_id": team_id,
+                "team_abbr": team_id_to_abbr.get(team_id, ""),
                 "props": []
             }
 
@@ -107,8 +127,10 @@ def get_underdog_nba_props() -> dict:
         stat_value = float(line.get("stat_value", 0))
 
         options = line.get("options", [])
-        over_option = next((o for o in options if o.get("choice") == "higher"), None)
-        under_option = next((o for o in options if o.get("choice") == "lower"), None)
+        over_option = next(
+            (o for o in options if o.get("choice") == "higher"), None)
+        under_option = next(
+            (o for o in options if o.get("choice") == "lower"), None)
 
         prop = {
             "id": line.get("id"),
@@ -134,7 +156,8 @@ def get_espn_nba_schedule() -> list:
     """Fetch today's NBA schedule from ESPN."""
     print("\n=== Fetching ESPN NBA Schedule ===")
 
-    status, data = fetch_json_httpx("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard")
+    status, data = fetch_json_httpx(
+        "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard")
 
     if status != 200 or not data:
         print(f"ERROR: Failed to fetch ESPN data (status: {status})")
@@ -148,8 +171,10 @@ def get_espn_nba_schedule() -> list:
         competition = event.get("competitions", [{}])[0]
         competitors = competition.get("competitors", [])
 
-        home_team = next((c for c in competitors if c.get("homeAway") == "home"), {})
-        away_team = next((c for c in competitors if c.get("homeAway") == "away"), {})
+        home_team = next(
+            (c for c in competitors if c.get("homeAway") == "home"), {})
+        away_team = next(
+            (c for c in competitors if c.get("homeAway") == "away"), {})
 
         game = {
             "id": event.get("id"),
@@ -183,7 +208,8 @@ def get_player_stats_quick(player_name: str) -> dict | None:
 
         position = "N/A"
         try:
-            player_info = commonplayerinfo.CommonPlayerInfo(player_id=player_id)
+            player_info = commonplayerinfo.CommonPlayerInfo(
+                player_id=player_id)
             info = player_info.get_normalized_dict()['CommonPlayerInfo']
             if info:
                 position = str(info[0].get('POSITION', 'N/A'))
@@ -191,7 +217,8 @@ def get_player_stats_quick(player_name: str) -> dict | None:
             pass
 
         try:
-            log = playergamelog.PlayerGameLog(player_id=player_id, season='2025-26')
+            log = playergamelog.PlayerGameLog(
+                player_id=player_id, season='2025-26')
             games = log.get_normalized_dict()['PlayerGameLog'][:5]
 
             if games:
@@ -239,7 +266,8 @@ def format_props_for_ios(props: list) -> list:
     seen_stats = set()
 
     # Prioritize main stats
-    priority_stats = ["Points", "Rebounds", "Assists", "3-Pointers Made", "Pts + Rebs + Asts"]
+    priority_stats = ["Points", "Rebounds", "Assists",
+                      "3-Pointers Made", "Pts + Rebs + Asts"]
 
     def prop_priority(p):
         stat = p["stat_name"]
@@ -308,14 +336,16 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     # 2. Fetch ESPN schedule for additional game context
     espn_games = get_espn_nba_schedule()
 
-    print(f"\nProcessing {len(underdog_data['players'])} players with props...\n")
+    print(
+        f"\nProcessing {len(underdog_data['players'])} players with props...\n")
 
     # 3. Enrich with NBA stats (parallel)
     enriched_players = []
 
     def enrich_player(player_data):
         player = player_data["player"]
-        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
+        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(
+        )
 
         # Try to get NBA API stats
         nba_stats = get_player_stats_quick(player_name)
@@ -324,12 +354,14 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             "underdog_player": player,
             "underdog_props": player_data["props"],
             "underdog_game": player_data.get("game", {}),
+            "underdog_team_abbr": player_data.get("team_abbr", ""),
             "nba_stats": nba_stats,
             "name": player_name,
         }
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(enrich_player, p): p["player"].get("id") for p in underdog_data["players"]}
+        futures = {executor.submit(enrich_player, p): p["player"].get(
+            "id") for p in underdog_data["players"]}
         for future in as_completed(futures):
             try:
                 result = future.result()
@@ -357,10 +389,12 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 nba_stats = ep.get("nba_stats") or {}
 
                 opponent = ud_game.get("abbreviated_title", "TBD")
-                averages = nba_stats.get("averages", {"pts": 0, "reb": 0, "ast": 0})
+                averages = nba_stats.get(
+                    "averages", {"pts": 0, "reb": 0, "ast": 0})
 
                 # Get top props for context
-                top_props = [f"{p['stat_name']} {p['line']}" for p in ep["underdog_props"][:3]]
+                top_props = [
+                    f"{p['stat_name']} {p['line']}" for p in ep["underdog_props"][:3]]
 
                 summaries.append({
                     "name": ep["name"],
@@ -399,7 +433,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             response = client.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=prompt,
-                config={"response_mime_type": "application/json", "temperature": 0.4}
+                config={"response_mime_type": "application/json",
+                        "temperature": 0.4}
             )
             ai_results = json.loads(response.text)
             print("✓ Gemini analysis complete")
@@ -457,20 +492,34 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         else:
             player_id = ud_player.get("id", str(uuid.uuid4()))
             player_name = ep["name"]
-            team_abbr = "UNK"
+            # Use team abbreviation from Underdog data
+            team_abbr = ep.get("underdog_team_abbr", "UNK")
             position = ud_player.get("position_name", "N/A")
             image_url = ud_player.get("image_url", "")
 
-        # Opponent from Underdog game
-        opponent = ud_game.get("abbreviated_title", "") or ud_game.get("short_title", "TBD")
+        # Determine opponent based on player's team
+        abbr_title = ud_game.get("abbreviated_title", "")
+        if " @ " in abbr_title:
+            away, home = abbr_title.split(" @ ")
+            if team_abbr == away:
+                opponent = f"@ {home}"
+            elif team_abbr == home:
+                opponent = f"vs {away}"
+            else:
+                opponent = abbr_title
+        else:
+            opponent = ud_game.get("short_title", "TBD")
 
-        # Game time
+        # Game time with UTC timestamp for client-side conversion
         game_time = "Tonight"
+        game_time_utc = None
         scheduled = ud_game.get("scheduled_at", "")
         if scheduled:
             try:
-                game_dt = datetime.datetime.fromisoformat(scheduled.replace('Z', '+00:00'))
-                game_time = game_dt.strftime("%I:%M %p")
+                game_dt = datetime.datetime.fromisoformat(
+                    scheduled.replace('Z', '+00:00'))
+                game_time = game_dt.strftime("%I:%M %p UTC")
+                game_time_utc = game_dt.isoformat()
             except:
                 pass
 
@@ -490,6 +539,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             "props": ios_props,
             "opponent": opponent,
             "gameTime": game_time,
+            "gameTimeUTC": game_time_utc,
             "trending": trending,
             "ai_analysis": analysis,
             "source": "underdog",
@@ -562,31 +612,49 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     # Write new
     for player_data in underdog_data["players"]:
         player = player_data["player"]
-        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
+        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(
+        )
         ud_game = player_data.get("game", {})
+        team_abbr = player_data.get("team_abbr", "UNK")
 
         ios_props = format_props_for_ios(player_data["props"])
         if not ios_props:
             continue
 
-        opponent = ud_game.get("abbreviated_title", "") or "TBD"
+        # Determine opponent based on player's team
+        abbr_title = ud_game.get("abbreviated_title", "")
+        if " @ " in abbr_title:
+            away, home = abbr_title.split(" @ ")
+            if team_abbr == away:
+                opponent = f"@ {home}"
+            elif team_abbr == home:
+                opponent = f"vs {away}"
+            else:
+                opponent = abbr_title
+        else:
+            opponent = ud_game.get("short_title", "TBD")
+
         game_time = "Tonight"
+        game_time_utc = None
         if ud_game.get("scheduled_at"):
             try:
-                game_dt = datetime.datetime.fromisoformat(ud_game["scheduled_at"].replace('Z', '+00:00'))
-                game_time = game_dt.strftime("%I:%M %p")
+                game_dt = datetime.datetime.fromisoformat(
+                    ud_game["scheduled_at"].replace('Z', '+00:00'))
+                game_time = game_dt.strftime("%I:%M %p UTC")
+                game_time_utc = game_dt.isoformat()
             except:
                 pass
 
         card = {
             "id": player.get("id", str(uuid.uuid4())),
             "name": player_name,
-            "teamAbbr": "UNK",
+            "teamAbbr": team_abbr,
             "position": player.get("position_name", "N/A"),
             "imageName": player.get("image_url", ""),
             "props": ios_props,
             "opponent": opponent,
             "gameTime": game_time,
+            "gameTimeUTC": game_time_utc,
             "trending": "up",
             "ai_analysis": "",
             "source": "underdog",
