@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read access to props collection for all users (public data)
+    match /props/{document=**} {
+      allow read: if true;
+      allow write: if false;  // Only Cloud Functions can write
+    }
+
+    // Allow read access to players collection
+    match /players/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Allow read access to games collection
+    match /games/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

@@ -2,24 +2,95 @@ import SwiftUI
 
 struct PlayerPropCard: View {
     let player: PlayerCardData
-    @State private var isExpanded: Bool = false
-    
+    @State private var showingMoreMarkets: Bool = false
+
+    // Convert UTC time to user's local timezone with day of week
+    private var formattedGameTime: String {
+        // Try to parse ISO timestamp from gameTimeUTC
+        if let utcString = player.gameTimeUTC {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            if let date = formatter.date(from: utcString) {
+                return formatGameDate(date)
+            }
+
+            // Try without fractional seconds
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: utcString) {
+                return formatGameDate(date)
+            }
+        }
+
+        // Fallback to existing gameTime string
+        return player.gameTime
+    }
+
+    private func formatGameDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let displayFormatter = DateFormatter()
+        displayFormatter.timeZone = TimeZone.current
+
+        // Check if the game is today
+        if calendar.isDateInToday(date) {
+            displayFormatter.dateFormat = "h:mm a"
+            return "Today \(displayFormatter.string(from: date))"
+        }
+
+        // Check if the game is tomorrow
+        if calendar.isDateInTomorrow(date) {
+            displayFormatter.dateFormat = "h:mm a"
+            return "Tomorrow \(displayFormatter.string(from: date))"
+        }
+
+        // Otherwise show day of week and time
+        displayFormatter.dateFormat = "EEE h:mm a"
+        return displayFormatter.string(from: date)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 1. Image Header Section
             ZStack(alignment: .bottomLeading) {
 
-                // Placeholder Image (Gray Background)
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .aspectRatio(1, contentMode: .fit)
-                    .overlay(
-                        Image(systemName: "person.fill")
+                // Player Image from URL
+                AsyncImage(url: URL(string: player.imageName)) { phase in
+                    switch phase {
+                    case .empty:
+                        // Loading state
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .aspectRatio(1, contentMode: .fit)
+                            .overlay(
+                                ProgressView()
+                                    .tint(.gray)
+                            )
+                    case .success(let image):
+                        // Loaded image
+                        image
                             .resizable()
-                            .padding(40)
-                            .foregroundStyle(.gray)
-                            .opacity(0.5)
-                    )
+                            .aspectRatio(contentMode: .fill)
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                            .aspectRatio(1, contentMode: .fit)
+                            .clipped()
+                    case .failure:
+                        // Error fallback
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .aspectRatio(1, contentMode: .fit)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .resizable()
+                                    .padding(40)
+                                    .foregroundStyle(.gray)
+                                    .opacity(0.5)
+                            )
+                    @unknown default:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .aspectRatio(1, contentMode: .fit)
+                    }
+                }
                 
                 // Gradient Overlay
                 LinearGradient(
@@ -63,19 +134,13 @@ struct PlayerPropCard: View {
                 
                 // Player Info (Bottom Left)
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(player.teamAbbr)
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        
-                        Text(player.position)
-                            .font(.caption2)
-                            .foregroundStyle(.gray)
-                    }
+                    Text(player.teamAbbr)
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     Text(player.name)
                         .font(.headline)
                         .fontWeight(.bold)
@@ -89,7 +154,7 @@ struct PlayerPropCard: View {
             HStack(spacing: 8) {
                 Image(systemName: "clock")
                     .font(.caption2)
-                Text("\(player.opponent) • \(player.gameTime)")
+                Text("\(player.opponent) • \(formattedGameTime)")
                     .font(.caption)
             }
             .foregroundStyle(.gray)
@@ -124,36 +189,12 @@ struct PlayerPropCard: View {
                 .padding(12)
             }
             
-            // 4. Expanded Props
-            if isExpanded && player.props.count > 1 {
-                VStack(spacing: 12) {
-                    ForEach(player.props.dropFirst()) { prop in
-                        VStack(spacing: 8) {
-                            Text(prop.statName + " " + String(format: "%.1f", prop.line))
-                                .font(.caption)
-                                .foregroundStyle(.gray)
-                            
-                            HStack(spacing: 8) {
-                                PropButton(label: "Over", odds: prop.overOdds, color: .brandEmerald, size: .small)
-                                PropButton(label: "Under", odds: prop.underOdds, color: .brandRed, size: .small)
-                            }
-                        }
-                        .padding(8)
-                        .background(Color.black.opacity(0.3))
-                        .cornerRadius(8)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-            }
-            
-            // 5. Expand Button
+            // 4. More Markets Button
             if player.props.count > 1 {
-                Button(action: { withAnimation { isExpanded.toggle() } }) {
+                Button(action: { showingMoreMarkets = true }) {
                     HStack(spacing: 4) {
-                        Text(isExpanded ? "Show Less" : "+\(player.props.count - 1) More Markets")
-                        Image(systemName: "chevron.down")
-                            .rotationEffect(Angle(degrees: isExpanded ? 180 : 0))
+                        Text("+\(player.props.count - 1) More Markets")
+                        Image(systemName: "chevron.right")
                     }
                     .font(.caption)
                     .foregroundStyle(.gray)
@@ -165,6 +206,112 @@ struct PlayerPropCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.border, lineWidth: 1)
+        )
+        .sheet(isPresented: $showingMoreMarkets) {
+            MoreMarketsSheet(player: player)
+        }
+    }
+}
+
+// Sheet view for additional markets
+struct MoreMarketsSheet: View {
+    let player: PlayerCardData
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            sheetContent
+                .background(Color.background)
+                .navigationTitle("All Markets")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                            .foregroundStyle(Color.brandEmerald)
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var sheetContent: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                playerHeader
+                Divider().background(Color.border)
+                propsList
+            }
+            .padding(.vertical)
+        }
+    }
+
+    private var playerHeader: some View {
+        HStack(spacing: 12) {
+            playerImage
+            VStack(alignment: .leading, spacing: 2) {
+                Text(player.name)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                Text(player.teamAbbr)
+                    .font(.caption)
+                    .foregroundStyle(.gray)
+            }
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+
+    private var playerImage: some View {
+        AsyncImage(url: URL(string: player.imageName)) { image in
+            image
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } placeholder: {
+            Image(systemName: "person.fill")
+                .foregroundStyle(.gray)
+        }
+        .frame(width: 50, height: 50)
+        .clipShape(Circle())
+    }
+
+    private var propsList: some View {
+        VStack(spacing: 12) {
+            ForEach(player.props) { prop in
+                PropRow(prop: prop)
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+// Individual prop row for the sheet
+struct PropRow: View {
+    let prop: PlayerProp
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text(prop.statName)
+                    .font(.subheadline)
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(String(format: "%.1f", prop.line))
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+            }
+            HStack(spacing: 12) {
+                PropButton(label: "Over", odds: prop.overOdds, color: .brandEmerald)
+                PropButton(label: "Under", odds: prop.underOdds, color: .brandRed)
+            }
+        }
+        .padding()
+        .background(Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.border, lineWidth: 1)
         )
     }
