@@ -9,17 +9,44 @@ struct PlayerPropCard: View {
             // 1. Image Header Section
             ZStack(alignment: .bottomLeading) {
 
-                // Placeholder Image (Gray Background)
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .aspectRatio(1, contentMode: .fit)
-                    .overlay(
-                        Image(systemName: "person.fill")
+                // Player Image from URL
+                AsyncImage(url: URL(string: player.imageName)) { phase in
+                    switch phase {
+                    case .empty:
+                        // Loading state
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .aspectRatio(1, contentMode: .fit)
+                            .overlay(
+                                ProgressView()
+                                    .tint(.gray)
+                            )
+                    case .success(let image):
+                        // Loaded image
+                        image
                             .resizable()
-                            .padding(40)
-                            .foregroundStyle(.gray)
-                            .opacity(0.5)
-                    )
+                            .aspectRatio(contentMode: .fill)
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                            .aspectRatio(1, contentMode: .fit)
+                            .clipped()
+                    case .failure:
+                        // Error fallback
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .aspectRatio(1, contentMode: .fit)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .resizable()
+                                    .padding(40)
+                                    .foregroundStyle(.gray)
+                                    .opacity(0.5)
+                            )
+                    @unknown default:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .aspectRatio(1, contentMode: .fit)
+                    }
+                }
                 
                 // Gradient Overlay
                 LinearGradient(

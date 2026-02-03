@@ -1,7 +1,8 @@
 """
-Batch Analyze Cloud Function - Dynamic Version
-Fetches ALL player props from upcoming NBA games and analyzes them.
-No hardcoded player list - gets whatever the odds API returns.
+Batch Analyze Cloud Function - Underdog Fantasy + ESPN Version
+Fetches player props from Underdog Fantasy (free API, no auth required)
+Uses ESPN for game schedules
+Analyzes with Gemini AI
 """
 
 from firebase_functions import https_fn, scheduler_fn
@@ -18,111 +19,153 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Note: Firebase is initialized in main.py which imports this module
 
 
-def get_all_upcoming_props(odds_api_key: str) -> dict:
+def fetch_json_httpx(url: str, headers: dict = None) -> tuple:
+    """Fetch JSON using httpx (available in Cloud Functions)."""
+    default_headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        "Accept": "application/json",
+    }
+    if headers:
+        default_headers.update(headers)
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(url, headers=default_headers)
+            if resp.status_code == 200:
+                return resp.status_code, resp.json()
+            return resp.status_code, None
+    except Exception as e:
+        print(f"Fetch error for {url}: {e}")
+        return None, None
+
+
+def get_underdog_nba_props() -> dict:
     """
-    Fetch ALL player props from ALL upcoming NBA games.
-    Returns: { "players": [{ player_name, team, props: [...], game_info }, ...] }
+    Fetch all NBA player props from Underdog Fantasy.
+    Returns structured data with players and their props.
     """
-    print("=== Fetching ALL upcoming game props ===")
-    
-    now_utc = datetime.datetime.now(timezone.utc)
-    
-    with httpx.Client(timeout=60.0) as client:
-        # 1. Get all upcoming NBA events
-        try:
-            events_resp = client.get(
-                "https://api.the-odds-api.com/v4/sports/basketball_nba/events",
-                params={"apiKey": odds_api_key, "regions": "us"}
-            )
-            events_resp.raise_for_status()
-            all_events = events_resp.json()
-        except Exception as e:
-            print(f"ERROR fetching events: {e}")
-            return {"players": [], "events": []}
-        
-        # 2. Filter to games that are upcoming OR currently live (started within last 24 hours)
-        # This ensures we capture live props and upcoming games
-        relevant_events = []
-        twenty_four_hours_ago = now_utc - datetime.timedelta(hours=24)
-        
-        for event in all_events:
-            commence_time_str = event.get("commence_time", "")
-            try:
-                commence_time = datetime.datetime.fromisoformat(commence_time_str.replace('Z', '+00:00'))
-                # Include if: upcoming OR started within last 24 hours (could be live)
-                if commence_time > twenty_four_hours_ago:
-                    relevant_events.append(event)
-                    status = "🔴 LIVE" if commence_time <= now_utc else "📅 Upcoming"
-                    print(f"{status}: {event['home_team']} vs {event['away_team']} at {commence_time_str}")
-                else:
-                    print(f"⏭️ Skipping old game: {event['home_team']} vs {event['away_team']}")
-            except Exception as e:
-                print(f"WARNING: Could not parse time '{commence_time_str}': {e}")
-                relevant_events.append(event)  # Include if can't parse
-        
-        print(f"\n📊 Found {len(relevant_events)} relevant games (live + upcoming)\n")
-        
-        # 3. Fetch player props for each game - collect ALL unique players
-        all_players = {}  # player_name -> { props: [...], game_info: {...} }
-        
-        for event in relevant_events:
-            game_id = event["id"]
-            game_info = {
-                "home": event["home_team"],
-                "away": event["away_team"],
-                "start": event["commence_time"]
+    print("=== Fetching Underdog Fantasy Props ===")
+
+    status, data = fetch_json_httpx("https://api.underdogfantasy.com/v1/over_under_lines")
+
+    if status != 200 or not data:
+        print(f"ERROR: Failed to fetch Underdog data (status: {status})")
+        return {"players": [], "games": []}
+
+    # Extract all data
+    players_raw = data.get("players", [])
+    appearances = data.get("appearances", [])
+    lines = data.get("over_under_lines", [])
+    games = data.get("games", [])
+
+    print(f"  Total players: {len(players_raw)}")
+    print(f"  Total lines: {len(lines)}")
+
+    # Filter to NBA only
+    nba_players = {p["id"]: p for p in players_raw if p.get("sport_id") == "NBA"}
+    print(f"  NBA players: {len(nba_players)}")
+
+    # Create appearance -> player mapping
+    appearance_to_player = {}
+    appearance_to_match = {}
+    for app in appearances:
+        player_id = app.get("player_id")
+        if player_id in nba_players:
+            appearance_to_player[app["id"]] = player_id
+            appearance_to_match[app["id"]] = app.get("match_id")
+
+    # Create game lookup
+    games_by_id = {g["id"]: g for g in games}
+
+    # Group lines by player
+    players_with_props = {}
+
+    for line in lines:
+        if line.get("status") != "active":
+            continue
+
+        ou = line.get("over_under", {})
+        app_stat = ou.get("appearance_stat", {})
+        app_id = app_stat.get("appearance_id", "")
+
+        if app_id not in appearance_to_player:
+            continue
+
+        player_id = appearance_to_player[app_id]
+        player = nba_players[player_id]
+        match_id = appearance_to_match.get(app_id)
+        game = games_by_id.get(match_id, {})
+
+        if player_id not in players_with_props:
+            players_with_props[player_id] = {
+                "player": player,
+                "game": game,
+                "props": []
             }
-            
-            try:
-                props_resp = client.get(
-                    f"https://api.the-odds-api.com/v4/sports/basketball_nba/events/{game_id}/odds",
-                    params={
-                        "apiKey": odds_api_key,
-                        "regions": "us",
-                        "markets": "player_points,player_assists,player_rebounds",
-                        "oddsFormat": "american"
-                    }
-                )
-                props_resp.raise_for_status()
-                data = props_resp.json()
-            except Exception as e:
-                print(f"ERROR fetching props for {event['home_team']} vs {event['away_team']}: {e}")
-                continue
-            
-            # Log response for debugging
-            bookmakers_count = len(data.get("bookmakers", []))
-            print(f"   📖 {event['home_team']} vs {event['away_team']}: {bookmakers_count} bookmakers with odds")
-            
-            # Extract all players from the props
-            if "bookmakers" in data:
-                for bookie in data["bookmakers"]:
-                    for market in bookie["markets"]:
-                        for outcome in market["outcomes"]:
-                            player_name = outcome["description"]
-                            
-                            # Initialize player entry if not exists
-                            if player_name not in all_players:
-                                all_players[player_name] = {
-                                    "name": player_name,
-                                    "game_info": game_info,
-                                    "props": []
-                                }
-                            
-                            # Add this prop
-                            all_players[player_name]["props"].append({
-                                "book": bookie["title"],
-                                "market": market["key"],
-                                "line": float(outcome["point"]),
-                                "type": outcome["name"],
-                                "odds": int(outcome["price"])
-                            })
-        
-        print(f"🏀 Found props for {len(all_players)} unique players\n")
-        
-        return {
-            "players": list(all_players.values()),
-            "events": relevant_events
+
+        stat_name = app_stat.get("display_stat", "Unknown")
+        stat_value = float(line.get("stat_value", 0))
+
+        options = line.get("options", [])
+        over_option = next((o for o in options if o.get("choice") == "higher"), None)
+        under_option = next((o for o in options if o.get("choice") == "lower"), None)
+
+        prop = {
+            "id": line.get("id"),
+            "stat_name": stat_name,
+            "line": stat_value,
+            "over_american": over_option.get("american_price", "-110") if over_option else "-110",
+            "under_american": under_option.get("american_price", "-110") if under_option else "-110",
         }
+
+        players_with_props[player_id]["props"].append(prop)
+
+    print(f"  NBA players with props: {len(players_with_props)}")
+    total_props = sum(len(p["props"]) for p in players_with_props.values())
+    print(f"  Total NBA props: {total_props}")
+
+    return {
+        "players": list(players_with_props.values()),
+        "games": [g for g in games if g.get("sport_id") == "NBA"]
+    }
+
+
+def get_espn_nba_schedule() -> list:
+    """Fetch today's NBA schedule from ESPN."""
+    print("\n=== Fetching ESPN NBA Schedule ===")
+
+    status, data = fetch_json_httpx("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard")
+
+    if status != 200 or not data:
+        print(f"ERROR: Failed to fetch ESPN data (status: {status})")
+        return []
+
+    events = data.get("events", [])
+    print(f"  Games today: {len(events)}")
+
+    games = []
+    for event in events:
+        competition = event.get("competitions", [{}])[0]
+        competitors = competition.get("competitors", [])
+
+        home_team = next((c for c in competitors if c.get("homeAway") == "home"), {})
+        away_team = next((c for c in competitors if c.get("homeAway") == "away"), {})
+
+        game = {
+            "id": event.get("id"),
+            "name": event.get("name"),
+            "short_name": event.get("shortName"),
+            "date": event.get("date"),
+            "status": event.get("status", {}).get("type", {}).get("description", "Scheduled"),
+            "home_team": home_team.get("team", {}).get("displayName", ""),
+            "home_abbr": home_team.get("team", {}).get("abbreviation", ""),
+            "away_team": away_team.get("team", {}).get("displayName", ""),
+            "away_abbr": away_team.get("team", {}).get("abbreviation", ""),
+        }
+        games.append(game)
+        print(f"    {game['short_name']} - {game['status']}")
+
+    return games
 
 
 def get_player_stats_quick(player_name: str) -> dict | None:
@@ -130,15 +173,14 @@ def get_player_stats_quick(player_name: str) -> dict | None:
     try:
         from nba_api.stats.static import players, teams
         from nba_api.stats.endpoints import playergamelog, commonplayerinfo
-        
+
         nba_players = players.find_players_by_full_name(player_name)
         if not nba_players:
             return None
-        
+
         player = nba_players[0]
         player_id = player['id']
-        
-        # Get position
+
         position = "N/A"
         try:
             player_info = commonplayerinfo.CommonPlayerInfo(player_id=player_id)
@@ -147,21 +189,20 @@ def get_player_stats_quick(player_name: str) -> dict | None:
                 position = str(info[0].get('POSITION', 'N/A'))
         except:
             pass
-        
-        # Get recent stats
+
         try:
             log = playergamelog.PlayerGameLog(player_id=player_id, season='2025-26')
-            games = log.get_normalized_dict()['PlayerGameLog'][:5]  # Last 5 games
-            
+            games = log.get_normalized_dict()['PlayerGameLog'][:5]
+
             if games:
                 team_code = str(games[0]['MATCHUP'].split(" ")[0])
                 nba_team = teams.find_team_by_abbreviation(team_code)
                 team_name = nba_team['full_name'] if nba_team else "Unknown"
-                
+
                 avg_pts = sum(g['PTS'] for g in games) / len(games)
                 avg_reb = sum(g['REB'] for g in games) / len(games)
                 avg_ast = sum(g['AST'] for g in games) / len(games)
-                
+
                 return {
                     "id": int(player_id),
                     "name": player['full_name'],
@@ -177,8 +218,7 @@ def get_player_stats_quick(player_name: str) -> dict | None:
                 }
         except Exception as e:
             print(f"Could not get game log for {player_name}: {e}")
-        
-        # Minimal fallback
+
         return {
             "id": int(player_id),
             "name": player['full_name'],
@@ -193,130 +233,169 @@ def get_player_stats_quick(player_name: str) -> dict | None:
         return None
 
 
-@https_fn.on_request(secrets=["GOOGLE_API_KEY", "ODDS_API_KEY"], timeout_sec=540, memory=1024)
+def format_props_for_ios(props: list) -> list:
+    """Format Underdog props for iOS app structure."""
+    ios_props = []
+    seen_stats = set()
+
+    # Prioritize main stats
+    priority_stats = ["Points", "Rebounds", "Assists", "3-Pointers Made", "Pts + Rebs + Asts"]
+
+    def prop_priority(p):
+        stat = p["stat_name"]
+        if stat in priority_stats:
+            return priority_stats.index(stat)
+        return 100
+
+    sorted_props = sorted(props, key=prop_priority)
+
+    for prop in sorted_props:
+        stat_name = prop["stat_name"]
+
+        if stat_name in seen_stats or len(ios_props) >= 6:
+            continue
+        seen_stats.add(stat_name)
+
+        short_name = stat_name
+        short_name = short_name.replace("Points", "Pts")
+        short_name = short_name.replace("Rebounds", "Reb")
+        short_name = short_name.replace("Assists", "Ast")
+        short_name = short_name.replace("3-Pointers Made", "3PM")
+        short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
+        short_name = short_name.replace("Fantasy Points", "FPTS")
+
+        try:
+            over_odds = int(prop["over_american"].replace("+", ""))
+        except:
+            over_odds = -110
+        try:
+            under_odds = int(prop["under_american"].replace("+", ""))
+        except:
+            under_odds = -110
+
+        ios_props.append({
+            "id": prop["id"],
+            "statName": short_name,
+            "line": prop["line"],
+            "overOdds": over_odds,
+            "underOdds": under_odds,
+        })
+
+    return ios_props
+
+
+@https_fn.on_request(secrets=["GOOGLE_API_KEY"], timeout_sec=540, memory=1024)
 def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     """
-    Dynamically fetch ALL player props for upcoming NBA games.
-    No hardcoded player list - gets whatever the odds API returns.
+    Fetch NBA player props from Underdog Fantasy and analyze with Gemini.
+    Uses ESPN for schedule data and nba_api for player stats enrichment.
     """
-    
+
     print("\n" + "="*60)
-    print("=== DYNAMIC BATCH ANALYSIS - ALL UPCOMING GAME PROPS ===")
+    print("=== UNDERDOG + ESPN BATCH ANALYSIS ===")
     print("="*60 + "\n")
-    
-    odds_api_key = os.getenv("ODDS_API_KEY")
-    if not odds_api_key:
+
+    # 1. Fetch props from Underdog Fantasy (no API key needed!)
+    underdog_data = get_underdog_nba_props()
+
+    if not underdog_data["players"]:
         return https_fn.Response(json.dumps({
             "status": "error",
-            "message": "ODDS_API_KEY not configured"
-        }), status=500, mimetype='application/json')
-    
-    # 1. Get ALL props from upcoming games
-    props_data = get_all_upcoming_props(odds_api_key)
-    
-    if not props_data["players"]:
-        return https_fn.Response(json.dumps({
-            "status": "error",
-            "message": "No player props found for upcoming games",
-            "events_checked": len(props_data.get("events", []))
+            "message": "No NBA player props found from Underdog Fantasy",
+            "note": "This may happen if no NBA games are scheduled today"
         }), status=404, mimetype='application/json')
-    
-    print(f"Processing {len(props_data['players'])} players with props...\n")
-    
-    # 2. Enrich with NBA stats (parallel)
+
+    # 2. Fetch ESPN schedule for additional game context
+    espn_games = get_espn_nba_schedule()
+
+    print(f"\nProcessing {len(underdog_data['players'])} players with props...\n")
+
+    # 3. Enrich with NBA stats (parallel)
     enriched_players = []
-    
-    def enrich_player(player_props):
-        stats = get_player_stats_quick(player_props["name"])
-        if stats:
-            return {
-                "player_stats": stats,
-                "props": player_props["props"],
-                "game_info": player_props["game_info"]
-            }
-        return None
-    
+
+    def enrich_player(player_data):
+        player = player_data["player"]
+        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
+
+        # Try to get NBA API stats
+        nba_stats = get_player_stats_quick(player_name)
+
+        return {
+            "underdog_player": player,
+            "underdog_props": player_data["props"],
+            "underdog_game": player_data.get("game", {}),
+            "nba_stats": nba_stats,
+            "name": player_name,
+        }
+
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(enrich_player, p): p["name"] for p in props_data["players"]}
+        futures = {executor.submit(enrich_player, p): p["player"].get("id") for p in underdog_data["players"]}
         for future in as_completed(futures):
-            player_name = futures[future]
             try:
                 result = future.result()
-                if result:
-                    enriched_players.append(result)
-                    print(f"✓ Enriched {player_name}")
+                enriched_players.append(result)
+                if result.get("nba_stats"):
+                    print(f"✓ Enriched {result['name']}")
                 else:
-                    print(f"✗ Could not enrich {player_name}")
+                    print(f"○ Basic data for {result['name']}")
             except Exception as e:
-                print(f"✗ Error enriching {player_name}: {e}")
-    
-    print(f"\n📊 Enriched {len(enriched_players)} players with NBA stats\n")
-    
-    # 3. Single Gemini call for detailed analysis
-    ai_by_name = {}  # name -> {trending, analysis}
+                print(f"✗ Error: {e}")
+
+    print(f"\n📊 Processed {len(enriched_players)} players\n")
+
+    # 4. Gemini AI Analysis
+    ai_by_name = {}
     google_api_key = os.getenv("GOOGLE_API_KEY")
-    
+
     if google_api_key and len(enriched_players) > 0:
         try:
-            # Build detailed summary for Gemini with opponent info
-            players_for_ai = enriched_players[:25]  # Limit for token budget
+            players_for_ai = enriched_players[:25]
             summaries = []
+
             for ep in players_for_ai:
-                ps = ep["player_stats"]
-                game = ep["game_info"]
-                
-                # Determine opponent
-                if ps["team_name"].lower() in game["home"].lower():
-                    opp = game["away"]
-                    home_away = "away"
-                else:
-                    opp = game["home"]
-                    home_away = "home"
-                
+                ud_game = ep.get("underdog_game", {})
+                nba_stats = ep.get("nba_stats") or {}
+
+                opponent = ud_game.get("abbreviated_title", "TBD")
+                averages = nba_stats.get("averages", {"pts": 0, "reb": 0, "ast": 0})
+
+                # Get top props for context
+                top_props = [f"{p['stat_name']} {p['line']}" for p in ep["underdog_props"][:3]]
+
                 summaries.append({
-                    "name": ps["name"],
-                    "team": ps["team_code"],
-                    "position": ps["position"],
-                    "averages": ps["averages"],
-                    "opponent": opp,
-                    "home_away": home_away,
-                    "props": [f"{p['type']} {p['line']} {p['market'].replace('player_', '')}" for p in ep["props"][:4]]
+                    "name": ep["name"],
+                    "position": nba_stats.get("position", ep["underdog_player"].get("position_name", "N/A")),
+                    "averages": averages,
+                    "opponent": opponent,
+                    "props": top_props
                 })
-            
+
             client = genai.Client(api_key=google_api_key)
-            prompt = f"""
-            You are an expert NBA handicapper providing prop bet analysis.
-            
-            **PLAYERS TO ANALYZE:** {len(summaries)}
-            
-            **DATA:**
-            {json.dumps(summaries, indent=2)}
-            
-            **FOR EACH PLAYER PROVIDE:**
-            1. "trending": "hot" (strong bet) or "up" (standard play)
-            2. "analysis": A specific 1-2 sentence analysis that MUST include:
-               - The opponent they're facing (e.g., "vs Lakers")
-               - Why this matchup matters (e.g., "Lakers rank 28th in perimeter D")
-               - A concrete recommendation on the prop
-            
-            **EXAMPLE GOOD ANALYSIS:**
-            "Facing the Lakers at home who allow 4th most PPG to guards. Look at Over 28.5 pts."
-            
-            **EXAMPLE BAD ANALYSIS (TOO GENERIC):**
-            "Luka is a triple-double threat nightly."
-            
-            **OUTPUT FORMAT (VALID JSON):**
-            {{
-                "players": [
-                    {{
-                        "name": "Player Name",
-                        "trending": "hot",
-                        "analysis": "Facing the Celtics who rank 3rd in defensive rating. Expect a tough night, lean Under 24.5 pts."
-                    }}
-                ]
-            }}
-            """
-            
+            prompt = f"""You are an expert NBA handicapper providing prop bet analysis.
+
+**PLAYERS TO ANALYZE:** {len(summaries)}
+
+**DATA:**
+{json.dumps(summaries, indent=2)}
+
+**FOR EACH PLAYER PROVIDE:**
+1. "trending": "hot" (strong bet) or "up" (standard play)
+2. "analysis": A specific 1-2 sentence analysis that MUST include:
+   - The opponent context
+   - A concrete recommendation on one of their props
+
+**OUTPUT FORMAT (VALID JSON):**
+{{
+    "players": [
+        {{
+            "name": "Player Name",
+            "trending": "hot",
+            "analysis": "Facing the Celtics who rank 3rd in defensive rating. Lean Under 24.5 pts."
+        }}
+    ]
+}}
+"""
+
             response = client.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=prompt,
@@ -324,7 +403,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             )
             ai_results = json.loads(response.text)
             print("✓ Gemini analysis complete")
-            
+
             for p in ai_results.get("players", []):
                 ai_by_name[p["name"].lower()] = {
                     "trending": p.get("trending", "up"),
@@ -332,288 +411,125 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 }
         except Exception as e:
             print(f"Gemini error (continuing without AI): {e}")
-    
-    # 4. Clear old props and write new data to Firestore
+
+    # 5. Clear old props and write to Firestore
     db = firestore.client()
-    
-    # Delete all existing props first (fresh start each run)
+
     print("🗑️  Clearing old props collection...")
     props_ref = db.collection("props")
     old_docs = props_ref.stream()
     deleted_count = 0
     delete_batch = db.batch()
-    
+
     for doc in old_docs:
         delete_batch.delete(doc.reference)
         deleted_count += 1
-        # Commit in chunks to avoid batch limits
         if deleted_count % 400 == 0:
             delete_batch.commit()
             delete_batch = db.batch()
-    
+
     if deleted_count % 400 != 0:
         delete_batch.commit()
-    
+
     print(f"🗑️  Deleted {deleted_count} old documents")
-    
-    # Now write new data
+
+    # Write new data
     batch = db.batch()
     written_count = 0
-    
+
     for ep in enriched_players:
-        ps = ep["player_stats"]
-        game = ep["game_info"]
-        
-        # Determine opponent
-        if ps["team_name"].lower() in game["home"].lower():
-            opponent = game["away"]
+        ud_player = ep["underdog_player"]
+        ud_props = ep["underdog_props"]
+        ud_game = ep.get("underdog_game", {})
+        nba_stats = ep.get("nba_stats")
+
+        ios_props = format_props_for_ios(ud_props)
+        if not ios_props:
+            continue
+
+        # Get player info (prefer NBA API data if available)
+        if nba_stats:
+            player_id = nba_stats["id"]
+            player_name = nba_stats["name"]
+            team_abbr = nba_stats["team_code"]
+            position = nba_stats["position"]
+            image_url = nba_stats["image"]
         else:
-            opponent = game["home"]
-        
-        # Get AI analysis or default
-        player_ai = ai_by_name.get(ps["name"].lower(), {})
-        trending = player_ai.get("trending", "up") if isinstance(player_ai, dict) else player_ai
-        analysis = player_ai.get("analysis", "") if isinstance(player_ai, dict) else ""
+            player_id = ud_player.get("id", str(uuid.uuid4()))
+            player_name = ep["name"]
+            team_abbr = "UNK"
+            position = ud_player.get("position_name", "N/A")
+            image_url = ud_player.get("image_url", "")
+
+        # Opponent from Underdog game
+        opponent = ud_game.get("abbreviated_title", "") or ud_game.get("short_title", "TBD")
+
+        # Game time
+        game_time = "Tonight"
+        scheduled = ud_game.get("scheduled_at", "")
+        if scheduled:
+            try:
+                game_dt = datetime.datetime.fromisoformat(scheduled.replace('Z', '+00:00'))
+                game_time = game_dt.strftime("%I:%M %p")
+            except:
+                pass
+
+        # AI analysis
+        player_ai = ai_by_name.get(player_name.lower(), {})
+        trending = player_ai.get("trending", "up")
+        analysis = player_ai.get("analysis", "")
         if trending not in ["up", "hot"]:
             trending = "up"
-        
-        # Group props by market+line
-        grouped_props = {}
-        for p in ep["props"]:
-            stat_name = p['market'].replace('player_', '').replace('_', ' ').title()
-            stat_name = stat_name.replace('Points', 'Pts').replace('Assists', 'Ast').replace('Rebounds', 'Reb')
-            
-            key = f"{p['market']}_{p['line']}"
-            if key not in grouped_props:
-                grouped_props[key] = {
-                    "id": str(uuid.uuid4()),
-                    "statName": stat_name,
-                    "line": p['line'],
-                    "overOdds": 0,
-                    "underOdds": 0
-                }
-            
-            if p['type'].lower() == 'over':
-                grouped_props[key]['overOdds'] = p['odds']
-            elif p['type'].lower() == 'under':
-                grouped_props[key]['underOdds'] = p['odds']
-        
-        ios_props = list(grouped_props.values())
-        
-        # Skip players with no props - they shouldn't be in the feed
-        if not ios_props:
-            print(f"⏭️ Skipping {ps['name']} - no props available")
-            continue
-        
-        # Build card data
+
         ios_card = {
-            "id": ps["id"],
-            "name": ps["name"],
-            "teamAbbr": ps["team_code"],
-            "position": ps["position"],
-            "imageName": ps["image"],
+            "id": player_id if isinstance(player_id, int) else str(player_id),
+            "name": player_name,
+            "teamAbbr": team_abbr,
+            "position": position,
+            "imageName": image_url,
             "props": ios_props,
             "opponent": opponent,
-            "gameTime": "Tonight",  # All are upcoming
+            "gameTime": game_time,
             "trending": trending,
-            "ai_analysis": analysis,  # Detailed analysis with opponent context
+            "ai_analysis": analysis,
+            "source": "underdog",
             "last_updated": datetime.datetime.now().isoformat()
         }
-        
-        doc_ref = db.collection("props").document(str(ps["id"]))
+
+        # Use string ID for Firestore document
+        doc_id = str(player_id) if isinstance(player_id, int) else player_id
+        doc_ref = db.collection("props").document(doc_id)
         batch.set(doc_ref, ios_card)
         written_count += 1
-        
-        # Firestore batch limit is 500, commit in chunks
+
         if written_count % 400 == 0:
             batch.commit()
             batch = db.batch()
-    
-    # Final commit
+
     if written_count % 400 != 0:
         batch.commit()
-    
+
     print(f"\n{'='*60}")
     print(f"=== COMPLETE: Wrote {written_count} players to Firestore ===")
     print("="*60 + "\n")
-    
+
     return https_fn.Response(json.dumps({
         "status": "success",
-        "message": f"Dynamically fetched and analyzed {written_count} players",
+        "message": f"Fetched and analyzed {written_count} players from Underdog Fantasy",
         "players_written": written_count,
-        "games_checked": len(props_data.get("events", []))
+        "source": "underdog_fantasy",
+        "espn_games_today": len(espn_games)
     }), mimetype='application/json')
-
-
-def run_batch_analysis() -> dict:
-    """
-    Core batch analysis logic - shared by HTTP and scheduled triggers.
-    Returns a dict with status and results.
-    """
-    import os
-    
-    odds_api_key = os.getenv("ODDS_API_KEY")
-    if not odds_api_key:
-        return {"status": "error", "message": "ODDS_API_KEY not configured"}
-    
-    # 1. Get ALL props from upcoming games
-    props_data = get_all_upcoming_props(odds_api_key)
-    
-    if not props_data["players"]:
-        # Still clear old data even if no new props
-        db = firestore.client()
-        props_ref = db.collection("props")
-        old_docs = props_ref.stream()
-        deleted_count = 0
-        delete_batch = db.batch()
-        for doc in old_docs:
-            delete_batch.delete(doc.reference)
-            deleted_count += 1
-            if deleted_count % 400 == 0:
-                delete_batch.commit()
-                delete_batch = db.batch()
-        if deleted_count % 400 != 0:
-            delete_batch.commit()
-        
-        return {
-            "status": "no_props",
-            "message": "No player props found for upcoming games",
-            "events_checked": len(props_data.get("events", [])),
-            "old_docs_deleted": deleted_count
-        }
-    
-    print(f"Processing {len(props_data['players'])} players with props...\n")
-    
-    # 2. Enrich with NBA stats (parallel)
-    enriched_players = []
-    
-    def enrich_player(player_props):
-        stats = get_player_stats_quick(player_props["name"])
-        if stats:
-            return {
-                "player_stats": stats,
-                "props": player_props["props"],
-                "game_info": player_props["game_info"]
-            }
-        return None
-    
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(enrich_player, p): p["name"] for p in props_data["players"]}
-        for future in as_completed(futures):
-            player_name = futures[future]
-            try:
-                result = future.result()
-                if result:
-                    enriched_players.append(result)
-            except Exception:
-                pass
-    
-    # 3. Gemini analysis
-    ai_by_name = {}
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-    
-    if google_api_key and enriched_players:
-        try:
-            players_for_ai = enriched_players[:25]
-            summaries = []
-            for ep in players_for_ai:
-                ps = ep["player_stats"]
-                game = ep["game_info"]
-                opp = game["away"] if ps["team_name"].lower() in game["home"].lower() else game["home"]
-                home_away = "away" if ps["team_name"].lower() in game["home"].lower() else "home"
-                summaries.append({
-                    "name": ps["name"], "team": ps["team_code"], "position": ps["position"],
-                    "averages": ps["averages"], "opponent": opp, "home_away": home_away,
-                    "props": [f"{p['type']} {p['line']} {p['market'].replace('player_', '')}" for p in ep["props"][:4]]
-                })
-            
-            client = genai.Client(api_key=google_api_key)
-            prompt = f"""You are an expert NBA handicapper. Analyze these {len(summaries)} players.
-For each: "trending" (hot/up) and "analysis" (1-2 sentences with opponent + recommendation).
-Data: {json.dumps(summaries)}
-Return JSON: {{"players": [{{"name": "...", "trending": "hot", "analysis": "Facing X who rank..."}}]}}"""
-            
-            response = client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt,
-                config={"response_mime_type": "application/json", "temperature": 0.4}
-            )
-            for p in json.loads(response.text).get("players", []):
-                ai_by_name[p["name"].lower()] = {"trending": p.get("trending", "up"), "analysis": p.get("analysis", "")}
-        except Exception as e:
-            print(f"Gemini error: {e}")
-    
-    # 4. Clear and write to Firestore
-    db = firestore.client()
-    props_ref = db.collection("props")
-    old_docs = props_ref.stream()
-    deleted_count = 0
-    delete_batch = db.batch()
-    for doc in old_docs:
-        delete_batch.delete(doc.reference)
-        deleted_count += 1
-        if deleted_count % 400 == 0:
-            delete_batch.commit()
-            delete_batch = db.batch()
-    if deleted_count % 400 != 0:
-        delete_batch.commit()
-    
-    batch = db.batch()
-    written_count = 0
-    
-    for ep in enriched_players:
-        ps = ep["player_stats"]
-        game = ep["game_info"]
-        opponent = game["away"] if ps["team_name"].lower() in game["home"].lower() else game["home"]
-        player_ai = ai_by_name.get(ps["name"].lower(), {})
-        trending = player_ai.get("trending", "up") if isinstance(player_ai, dict) else "up"
-        analysis = player_ai.get("analysis", "") if isinstance(player_ai, dict) else ""
-        
-        # Group props
-        grouped_props = {}
-        for p in ep["props"]:
-            stat_name = p['market'].replace('player_', '').replace('_', ' ').title()
-            stat_name = stat_name.replace('Points', 'Pts').replace('Assists', 'Ast').replace('Rebounds', 'Reb')
-            key = f"{p['market']}_{p['line']}"
-            if key not in grouped_props:
-                grouped_props[key] = {"id": str(uuid.uuid4()), "statName": stat_name, "line": p['line'], "overOdds": 0, "underOdds": 0}
-            if p['type'].lower() == 'over':
-                grouped_props[key]['overOdds'] = p['odds']
-            elif p['type'].lower() == 'under':
-                grouped_props[key]['underOdds'] = p['odds']
-        
-        ios_props = list(grouped_props.values())
-        if not ios_props:
-            continue
-        
-        ios_card = {
-            "id": ps["id"], "name": ps["name"], "teamAbbr": ps["team_code"],
-            "position": ps["position"], "imageName": ps["image"], "props": ios_props,
-            "opponent": opponent, "gameTime": "Tonight", "trending": trending,
-            "ai_analysis": analysis, "last_updated": datetime.datetime.now().isoformat()
-        }
-        
-        batch.set(db.collection("props").document(str(ps["id"])), ios_card)
-        written_count += 1
-        if written_count % 400 == 0:
-            batch.commit()
-            batch = db.batch()
-    
-    if written_count % 400 != 0:
-        batch.commit()
-    
-    return {"status": "success", "players_written": written_count, "games_checked": len(props_data.get("events", []))}
 
 
 # ============================================================
 # SCHEDULED FUNCTION - Runs automatically via Cloud Scheduler
 # ============================================================
-# Schedule: "0 9,18 * * *" = 9am and 6pm every day (UTC)
-# Adjust timezone as needed with timezone parameter
 
 @scheduler_fn.on_schedule(
-    schedule="0 9,18 * * *",  # 9am and 6pm UTC daily (adjust as needed)
-    timezone=scheduler_fn.Timezone("America/Los_Angeles"),  # PST
-    secrets=["GOOGLE_API_KEY", "ODDS_API_KEY"],
+    schedule="0 9,18 * * *",
+    timezone=scheduler_fn.Timezone("America/Los_Angeles"),
+    secrets=["GOOGLE_API_KEY"],
     timeout_sec=540,
     memory=1024
 )
@@ -623,12 +539,60 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     Runs at 9am and 6pm Pacific Time.
     """
     print("\n" + "="*60)
-    print("=== SCHEDULED REFRESH - AUTO-TRIGGERED ===")
+    print("=== SCHEDULED REFRESH - UNDERDOG + ESPN ===")
     print(f"=== Time: {datetime.datetime.now().isoformat()} ===")
     print("="*60 + "\n")
-    
-    result = run_batch_analysis()
-    
-    print(f"\n=== SCHEDULED REFRESH COMPLETE ===")
-    print(f"Result: {json.dumps(result)}")
 
+    # Reuse the same logic
+    underdog_data = get_underdog_nba_props()
+    if not underdog_data["players"]:
+        print("No NBA props available")
+        return
+
+    espn_games = get_espn_nba_schedule()
+
+    # Process players (simplified version for scheduled runs)
+    db = firestore.client()
+
+    # Clear old
+    props_ref = db.collection("props")
+    for doc in props_ref.stream():
+        doc.reference.delete()
+
+    # Write new
+    for player_data in underdog_data["players"]:
+        player = player_data["player"]
+        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
+        ud_game = player_data.get("game", {})
+
+        ios_props = format_props_for_ios(player_data["props"])
+        if not ios_props:
+            continue
+
+        opponent = ud_game.get("abbreviated_title", "") or "TBD"
+        game_time = "Tonight"
+        if ud_game.get("scheduled_at"):
+            try:
+                game_dt = datetime.datetime.fromisoformat(ud_game["scheduled_at"].replace('Z', '+00:00'))
+                game_time = game_dt.strftime("%I:%M %p")
+            except:
+                pass
+
+        card = {
+            "id": player.get("id", str(uuid.uuid4())),
+            "name": player_name,
+            "teamAbbr": "UNK",
+            "position": player.get("position_name", "N/A"),
+            "imageName": player.get("image_url", ""),
+            "props": ios_props,
+            "opponent": opponent,
+            "gameTime": game_time,
+            "trending": "up",
+            "ai_analysis": "",
+            "source": "underdog",
+            "last_updated": datetime.datetime.now().isoformat()
+        }
+
+        db.collection("props").document(str(card["id"])).set(card)
+
+    print("=== SCHEDULED REFRESH COMPLETE ===")

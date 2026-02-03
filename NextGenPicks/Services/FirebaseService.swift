@@ -18,29 +18,50 @@ class FirebaseService: DataService {
     
     func fetchLiveProps() async throws -> [PlayerCardData] {
         print("🔥 FirebaseService: Fetching live props...")
-        
-        // Temporarily fetch ALL props (no filter) to debug
-        let snapshot = try await db.collection("props")
-            .limit(to: 30)
-            .getDocuments()
-        
-        print("🔥 FirebaseService: Found \(snapshot.documents.count) documents")
-        
-        var results: [PlayerCardData] = []
-        for doc in snapshot.documents {
-            do {
-                let data = try doc.data(as: PlayerCardData.self)
-                results.append(data)
-                print("✅ Decoded: \(data.name)")
-            } catch {
-                print("❌ Failed to decode document \(doc.documentID): \(error)")
-                // Print raw data for debugging
-                print("   Raw data: \(doc.data())")
+
+        do {
+            // Temporarily fetch ALL props (no filter) to debug
+            let snapshot = try await db.collection("props")
+                .limit(to: 30)
+                .getDocuments()
+
+            print("🔥 FirebaseService: Found \(snapshot.documents.count) documents")
+
+            if snapshot.documents.isEmpty {
+                print("⚠️ FirebaseService: No documents found in 'props' collection!")
+                print("⚠️ Check: 1) Firebase project ID matches 2) Data was written 3) Security rules allow read")
             }
+
+            var results: [PlayerCardData] = []
+            for doc in snapshot.documents {
+                print("📄 Processing doc: \(doc.documentID)")
+                do {
+                    let data = try doc.data(as: PlayerCardData.self)
+                    results.append(data)
+                    print("✅ Decoded: \(data.name)")
+                } catch let DecodingError.keyNotFound(key, context) {
+                    print("❌ Missing key '\(key.stringValue)' in doc \(doc.documentID)")
+                    print("   Context: \(context.debugDescription)")
+                    print("   Raw data keys: \(doc.data().keys)")
+                } catch let DecodingError.typeMismatch(type, context) {
+                    print("❌ Type mismatch for \(type) in doc \(doc.documentID)")
+                    print("   Path: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
+                    print("   Context: \(context.debugDescription)")
+                } catch let DecodingError.valueNotFound(type, context) {
+                    print("❌ Value not found for \(type) in doc \(doc.documentID)")
+                    print("   Path: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
+                } catch {
+                    print("❌ Failed to decode document \(doc.documentID): \(error)")
+                    print("   Raw data: \(doc.data())")
+                }
+            }
+
+            print("🔥 FirebaseService: Successfully decoded \(results.count) players")
+            return results
+        } catch {
+            print("🔥❌ FirebaseService ERROR: \(error)")
+            throw error
         }
-        
-        print("🔥 FirebaseService: Successfully decoded \(results.count) players")
-        return results
     }
     
     func searchPlayers(query: String) async throws -> [PlayerCardData] {

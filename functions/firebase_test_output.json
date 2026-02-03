@@ -1,0 +1,3304 @@
+[
+  {
+    "id": "c311d754-8979-4374-a4af-af325e7b074a",
+    "name": "Zion Williamson",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-5cc51c05-06f5-4ae4-89a4-1d329fbbcdfb.png",
+    "props": [
+      {
+        "id": "b2511e16-c23c-4e23-b684-4924eec9e0de",
+        "statName": "Pts",
+        "line": 22.5,
+        "overOdds": -103,
+        "underOdds": -121
+      },
+      {
+        "id": "6fc7a683-10a2-4748-924d-0afe4444e9f4",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": -148,
+        "underOdds": 120
+      },
+      {
+        "id": "cebed2a0-32cf-4e61-977b-f63675a348d8",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": -136,
+        "underOdds": 111
+      },
+      {
+        "id": "0ab98db7-a88f-42f1-a52c-f92a9aafe9c8",
+        "statName": "PRA",
+        "line": 32.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "b874887a-a0ff-4fde-8ae9-3f482c869c59",
+        "statName": "Reb + Ast",
+        "line": 10.5,
+        "overOdds": 108,
+        "underOdds": -134
+      },
+      {
+        "id": "36acfdc9-d37c-41f5-91c5-65ff791c326b",
+        "statName": "Pts + Reb",
+        "line": 29.5,
+        "overOdds": -115,
+        "underOdds": -106
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867807+00:00"
+  },
+  {
+    "id": "b78ba991-272a-438e-81d6-901d66c7e09a",
+    "name": "LaMelo Ball",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251022_15-be53f27f-c666-4bd2-8fcd-0713f963aa2b.png",
+    "props": [
+      {
+        "id": "dbfdd88e-61a5-46c8-9550-f2028ee95d70",
+        "statName": "Pts",
+        "line": 19.5,
+        "overOdds": -109,
+        "underOdds": -113
+      },
+      {
+        "id": "7207264d-30bb-494b-8a58-8bf4fedaee08",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "a9f69a48-6369-4d1d-829c-9cf642af8ed9",
+        "statName": "Ast",
+        "line": 8.5,
+        "overOdds": 116,
+        "underOdds": -141
+      },
+      {
+        "id": "dfe20fb5-1048-4915-b2c3-a558d6e6a886",
+        "statName": "3PM",
+        "line": 3.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "1e67bf0b-a8bf-4f0d-92d6-05fb77aae6fc",
+        "statName": "PRA",
+        "line": 32.5,
+        "overOdds": -121,
+        "underOdds": -102
+      },
+      {
+        "id": "090649ad-1530-43ba-bc50-00229ddc1d15",
+        "statName": "Reb + Ast",
+        "line": 13.5,
+        "overOdds": 106,
+        "underOdds": -130
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867838+00:00"
+  },
+  {
+    "id": "c3904f81-1342-4717-a9b5-25d61359f247",
+    "name": "Miles Bridges",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_04-af8f331b-96a6-416e-8837-b14d5b11c52d.png",
+    "props": [
+      {
+        "id": "1e243bfc-96b2-44f7-9b7d-1cde85c2c3e2",
+        "statName": "Pts",
+        "line": 16.5,
+        "overOdds": -105,
+        "underOdds": -117
+      },
+      {
+        "id": "a062d608-5a13-4955-87c8-9495e8cbfda5",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": -121,
+        "underOdds": -103
+      },
+      {
+        "id": "ef75e6e5-24b1-40d3-b8a7-3e3454b44558",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": 114,
+        "underOdds": -139
+      },
+      {
+        "id": "31901e4c-4cb0-418e-9356-9caa00d20f7c",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -189,
+        "underOdds": 153
+      },
+      {
+        "id": "b1898a48-1968-4ab3-ac68-59ffff158671",
+        "statName": "PRA",
+        "line": 25.5,
+        "overOdds": -118,
+        "underOdds": -105
+      },
+      {
+        "id": "f9cc801b-d871-4c79-8fb2-14cad0d95fdc",
+        "statName": "Reb + Ast",
+        "line": 9.5,
+        "overOdds": 104,
+        "underOdds": -127
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867857+00:00"
+  },
+  {
+    "id": "794f5b4a-fc6c-4f3e-b386-246945335358",
+    "name": "Brandon Miller",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_04-775e4450-cdcd-43a1-b4cd-dc29fba48503.png",
+    "props": [
+      {
+        "id": "570768c9-981d-4add-a710-a084d532bb5a",
+        "statName": "Pts",
+        "line": 22.5,
+        "overOdds": -125,
+        "underOdds": 103
+      },
+      {
+        "id": "476e7771-fb55-4d1e-844a-b10f8da36b89",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": 126,
+        "underOdds": -154
+      },
+      {
+        "id": "00641943-fbe9-4bd6-a960-b71abf043102",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": 112,
+        "underOdds": -139
+      },
+      {
+        "id": "bb4619b9-628d-4d6f-86a6-ae961ac29568",
+        "statName": "3PM",
+        "line": 3.5,
+        "overOdds": 117,
+        "underOdds": -145
+      },
+      {
+        "id": "a604d768-cb02-4020-93ff-ed379859ffc2",
+        "statName": "PRA",
+        "line": 31.5,
+        "overOdds": -120,
+        "underOdds": -104
+      },
+      {
+        "id": "159f1699-bf56-485c-b812-8e405ba1949e",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": -106,
+        "underOdds": -117
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867875+00:00"
+  },
+  {
+    "id": "5db43c48-2c79-4f2a-a2bb-3aba55bf9d2b",
+    "name": "Yves Missi",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-7ff3c32f-2552-454d-9dee-a1d52000458a.png",
+    "props": [
+      {
+        "id": "116741ff-7154-473a-aeca-4a805b2a4f7d",
+        "statName": "Pts",
+        "line": 6.5,
+        "overOdds": 103,
+        "underOdds": -127
+      },
+      {
+        "id": "84590e4f-45d9-4377-89ed-c9ed92e11b12",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": -118,
+        "underOdds": -105
+      },
+      {
+        "id": "73dabc20-13f1-4b6d-a671-df8577b20262",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": 127,
+        "underOdds": -152
+      },
+      {
+        "id": "bb5b866d-09bb-419f-a970-02f63747d48b",
+        "statName": "PRA",
+        "line": 13.5,
+        "overOdds": -114,
+        "underOdds": -108
+      },
+      {
+        "id": "4dd367ce-47c4-43f1-81b0-adee91e40430",
+        "statName": "Reb + Ast",
+        "line": 7.5,
+        "overOdds": 110,
+        "underOdds": -136
+      },
+      {
+        "id": "ec788be8-94e8-4391-807d-8c843c0e9354",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": 1350,
+        "underOdds": -110
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867888+00:00"
+  },
+  {
+    "id": "7bdc34e6-4126-42e0-8657-5a44612b0980",
+    "name": "Collin Sexton",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-80b5cccf-203b-4482-92aa-76d1598216be.png",
+    "props": [
+      {
+        "id": "7491599d-1920-4736-91c1-e94c9f9b4835",
+        "statName": "Pts",
+        "line": 10.5,
+        "overOdds": -105,
+        "underOdds": -118
+      },
+      {
+        "id": "6cd822f8-552c-4521-a848-17f70c8cfc46",
+        "statName": "Reb",
+        "line": 1.5,
+        "overOdds": -139,
+        "underOdds": 113
+      },
+      {
+        "id": "c30ca227-8569-48ce-b31a-f4d78539bffb",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": -182,
+        "underOdds": 148
+      },
+      {
+        "id": "df679f70-7302-43ba-95cb-f1f52dbc8e76",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 143,
+        "underOdds": -176
+      },
+      {
+        "id": "a3466aac-d988-47d8-8807-be2b4bd7a2bf",
+        "statName": "PRA",
+        "line": 15.5,
+        "overOdds": -105,
+        "underOdds": -118
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867898+00:00"
+  },
+  {
+    "id": "08d380dc-2126-4d28-bd52-f4237330473d",
+    "name": "Jose Alvarado",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-8d6caab5-3a9a-4994-bde0-9fe14032efd7.png",
+    "props": [
+      {
+        "id": "bc245099-9164-4ff2-a2e2-9d3c43a40ab0",
+        "statName": "Pts",
+        "line": 6.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "7a82295f-674e-4115-a7df-f1c91c904aae",
+        "statName": "Reb",
+        "line": 1.5,
+        "overOdds": -150,
+        "underOdds": 122
+      },
+      {
+        "id": "5476ff38-82e3-4eaf-8b13-7382e07f1d28",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": -154,
+        "underOdds": 128
+      },
+      {
+        "id": "e8c91e77-7f7d-49a9-b8ac-994774fdca3f",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "4d7e7864-6658-46a3-aadc-5bdc3041a21c",
+        "statName": "PRA",
+        "line": 11.5,
+        "overOdds": -107,
+        "underOdds": -115
+      },
+      {
+        "id": "fd22da23-3a6d-462c-9ce1-dd4f333d50be",
+        "statName": "3s Attempted",
+        "line": 4.5,
+        "overOdds": -148,
+        "underOdds": 116
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867908+00:00"
+  },
+  {
+    "id": "fd95eced-9a1e-4ac0-814f-5291ec4e3ebf",
+    "name": "Trey Murphy III",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-51b62fe8-1e5c-4c65-8ad3-2ad06e749b70.png",
+    "props": [
+      {
+        "id": "38eb1fe7-e274-4525-a29f-52746eed6a80",
+        "statName": "Pts",
+        "line": 21.5,
+        "overOdds": -103,
+        "underOdds": -121
+      },
+      {
+        "id": "cbd89546-ccf1-4b33-a479-26f464ccf4e7",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": -141,
+        "underOdds": 114
+      },
+      {
+        "id": "e8d98ce2-5153-4785-b20d-b86d1d209a42",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": -143,
+        "underOdds": 121
+      },
+      {
+        "id": "73b046a7-e534-4152-9ce2-b0a529531a72",
+        "statName": "3PM",
+        "line": 2.5,
+        "overOdds": -162,
+        "underOdds": 129
+      },
+      {
+        "id": "a16845b4-a7b8-4042-9dc2-7fc0f67b5903",
+        "statName": "PRA",
+        "line": 30.5,
+        "overOdds": -106,
+        "underOdds": -115
+      },
+      {
+        "id": "eaaba897-eafb-418f-840b-b583b86ed066",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": -127,
+        "underOdds": 103
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867923+00:00"
+  },
+  {
+    "id": "3e4397b9-9ab3-4abf-a5c6-2092a6e79248",
+    "name": "Herb Jones",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-66b88001-06c2-4f4a-9825-b6e0cc1df6cc.png",
+    "props": [
+      {
+        "id": "22264866-aec9-40dc-b1a8-ac89073b6c1b",
+        "statName": "Pts",
+        "line": 8.5,
+        "overOdds": -121,
+        "underOdds": 100
+      },
+      {
+        "id": "3f2eb6fc-f99b-4f6f-b238-50142bbba1bc",
+        "statName": "Reb",
+        "line": 3.5,
+        "overOdds": 140,
+        "underOdds": -173
+      },
+      {
+        "id": "354ff815-17d6-41ea-8468-a135941a2f85",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": -129,
+        "underOdds": 105
+      },
+      {
+        "id": "04dfe755-66b3-4a42-9417-01362f8d82cf",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 157,
+        "underOdds": -193
+      },
+      {
+        "id": "df6b2655-9bd7-49ee-9138-7249328870ab",
+        "statName": "PRA",
+        "line": 14.5,
+        "overOdds": -112,
+        "underOdds": -110
+      },
+      {
+        "id": "f1464f9e-395a-41a2-b6ee-d068555b6897",
+        "statName": "Steals",
+        "line": 1.5,
+        "overOdds": 118,
+        "underOdds": -145
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867932+00:00"
+  },
+  {
+    "id": "260d44ae-39e2-43f9-944a-b7af711566e7",
+    "name": "Saddiq Bey",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-d531a451-6377-4942-a26f-3507d60fb36b.png",
+    "props": [
+      {
+        "id": "db9c7b43-2f60-4981-8a33-52bfab6173cb",
+        "statName": "Pts",
+        "line": 17.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "fe52d1f1-9d71-4126-b247-23ce1c279fa2",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "ccd3edc9-6259-48cd-bb27-3abc5ac4998e",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": 131,
+        "underOdds": -162
+      },
+      {
+        "id": "ec226417-d5f6-4fbd-a876-7c092bcf6779",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -176,
+        "underOdds": 143
+      },
+      {
+        "id": "a368ae67-bf57-4f04-93ce-4da505df23e6",
+        "statName": "PRA",
+        "line": 25.5,
+        "overOdds": -102,
+        "underOdds": -121
+      },
+      {
+        "id": "ddc2389b-284a-49ae-93d7-33780aef46cb",
+        "statName": "Reb + Ast",
+        "line": 7.5,
+        "overOdds": -118,
+        "underOdds": -105
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867943+00:00"
+  },
+  {
+    "id": "1d61e4a8-2779-44d1-9aee-7b94319e855d",
+    "name": "Kon Knueppel",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_04-0b9a642d-d6f6-4c65-a7bd-d82e016e1b5d.png",
+    "props": [
+      {
+        "id": "4050690e-6149-4e62-af76-cefe20c26200",
+        "statName": "Pts",
+        "line": 18.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "c02f70e1-c6a5-4040-8090-e75abfa964c5",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": 106,
+        "underOdds": -130
+      },
+      {
+        "id": "14ccef46-f895-4b91-a909-e0bd20231fe5",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "7112bd6c-2660-471d-b1fc-eea4f151bda5",
+        "statName": "3PM",
+        "line": 2.5,
+        "overOdds": -176,
+        "underOdds": 142
+      },
+      {
+        "id": "fa3fedaa-1a12-4787-a5b6-5b330e1f79f5",
+        "statName": "PRA",
+        "line": 27.5,
+        "overOdds": -105,
+        "underOdds": -118
+      },
+      {
+        "id": "ecbbe199-2393-4504-8393-869646554c34",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": -141,
+        "underOdds": 115
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867954+00:00"
+  },
+  {
+    "id": "e3562c47-d556-4585-b052-89f2b1994f80",
+    "name": "Grant Williams",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251015_21-59209028-6712-47ef-b87c-bdb19f91523b.png",
+    "props": [
+      {
+        "id": "d8822a38-7d1e-4a65-9790-0e196b3dca82",
+        "statName": "Pts",
+        "line": 5.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "e7d81905-38a4-487d-a780-9ba0aeeeb5b6",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -143,
+        "underOdds": 115
+      },
+      {
+        "id": "f61ff6d9-2207-4ccb-9085-3406ef777bca",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": 138,
+        "underOdds": -170
+      },
+      {
+        "id": "7f81c263-24b6-464d-accf-e23f884237c0",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 134,
+        "underOdds": -164
+      },
+      {
+        "id": "5ecb799c-e1b8-4486-90e3-10382de28029",
+        "statName": "PRA",
+        "line": 10.5,
+        "overOdds": -112,
+        "underOdds": -112
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867962+00:00"
+  },
+  {
+    "id": "71c33275-bfac-4f2c-88f3-282714b38b20",
+    "name": "Derik Queen",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251024_22-a4de5912-bd72-4993-ac93-fb65d2164660.png",
+    "props": [
+      {
+        "id": "55c4d4f4-71ab-4566-b8f2-880b072d65a0",
+        "statName": "Pts",
+        "line": 9.5,
+        "overOdds": -134,
+        "underOdds": 109
+      },
+      {
+        "id": "814ce676-4d0b-4954-9a13-a7f15c2be6e8",
+        "statName": "Reb",
+        "line": 6.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "dc4a47d7-f2de-40ed-8be5-3fee7445d2f3",
+        "statName": "Ast",
+        "line": 4.5,
+        "overOdds": 125,
+        "underOdds": -157
+      },
+      {
+        "id": "4b340860-2ddf-42df-987d-1e606c3a628e",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": 331,
+        "underOdds": -455
+      },
+      {
+        "id": "6b773813-46a5-4f6e-9956-ca80661929fc",
+        "statName": "PRA",
+        "line": 20.5,
+        "overOdds": -125,
+        "underOdds": 103
+      },
+      {
+        "id": "b8a80b2c-30bf-47a1-b999-bd8a87ee0430",
+        "statName": "Reb + Ast",
+        "line": 11.5,
+        "overOdds": 108,
+        "underOdds": -134
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867977+00:00"
+  },
+  {
+    "id": "7671dd78-6f07-4986-9218-98940c34e88b",
+    "name": "Jeremiah Fears",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251024_03-26ad516e-5b80-4d33-a40a-b0dfacbaa992.png",
+    "props": [
+      {
+        "id": "9d436a37-2ac8-4694-afd4-8bf022fb7052",
+        "statName": "Pts",
+        "line": 9.5,
+        "overOdds": 101,
+        "underOdds": -124
+      },
+      {
+        "id": "0d7d97c8-4f01-4e5f-ac0d-0f5ebdf0e69a",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": 100,
+        "underOdds": -127
+      },
+      {
+        "id": "289b0862-f095-45e3-a36c-d4819b56a1d9",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": 137,
+        "underOdds": -170
+      },
+      {
+        "id": "a093b89e-7792-4624-9ca4-0f3c7e0034b6",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": -197,
+        "underOdds": 161
+      },
+      {
+        "id": "d6fbe6c4-6d2b-4c74-a0ae-32995aea086c",
+        "statName": "PRA",
+        "line": 14.5,
+        "overOdds": -112,
+        "underOdds": -112
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867986+00:00"
+  },
+  {
+    "id": "35eb0d47-4057-42b2-9586-07417f1f008f",
+    "name": "Moussa Diabate",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-78dc76b4-a810-4e4a-9418-5cf3fa03582f.png",
+    "props": [
+      {
+        "id": "f1479198-1788-4aac-89f4-6959d964efa4",
+        "statName": "Pts",
+        "line": 10.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "702b3c2b-19ec-4849-b6b0-919b1e3e1685",
+        "statName": "Reb",
+        "line": 10.5,
+        "overOdds": -127,
+        "underOdds": 104
+      },
+      {
+        "id": "0f3ac173-cc20-4743-8baa-f4eea2e3ea99",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -115,
+        "underOdds": -107
+      },
+      {
+        "id": "a96e665a-b98f-4a3f-a96f-f0f9f3ad4993",
+        "statName": "PRA",
+        "line": 23.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "2f25dd99-eb86-458c-8269-1ce0bfa5c5be",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": 119,
+        "underOdds": -148
+      },
+      {
+        "id": "d70ec325-fa90-4920-87f9-ed168476b0f1",
+        "statName": "1Q Reb",
+        "line": 2.5,
+        "overOdds": -109,
+        "underOdds": -113
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.867997+00:00"
+  },
+  {
+    "id": "92078feb-3dbb-47c0-beab-393b16d145ff",
+    "name": "Ryan Kalkbrenner",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-388ec80d-171a-48f7-9cc8-5a8bebde54e0.png",
+    "props": [
+      {
+        "id": "2feae793-d59b-4676-b941-9d36390ceae0",
+        "statName": "Pts",
+        "line": 5.5,
+        "overOdds": -145,
+        "underOdds": 118
+      },
+      {
+        "id": "69b4fae6-4c64-46af-ab0d-d64c1760e471",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": 111,
+        "underOdds": -137
+      },
+      {
+        "id": "779c2151-9f18-40ca-9235-708650c45018",
+        "statName": "PRA",
+        "line": 10.5,
+        "overOdds": -129,
+        "underOdds": 104
+      },
+      {
+        "id": "40703412-95a2-4d35-89fb-0e50f916b40c",
+        "statName": "1Q Reb",
+        "line": 1.5,
+        "overOdds": 150,
+        "underOdds": -186
+      },
+      {
+        "id": "147d010a-0313-4410-ad04-42c5efca39a6",
+        "statName": "Blocks",
+        "line": 1.5,
+        "overOdds": 180,
+        "underOdds": -228
+      }
+    ],
+    "opponent": "NOP @ CHA",
+    "gameTime": "08:00 PM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868004+00:00"
+  },
+  {
+    "id": "9af876e3-ad24-4655-aa39-d774419aedea",
+    "name": "Pascal Siakam",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251023_15-3df1db1d-6596-489e-8e26-80f60fd9b1f4.png",
+    "props": [
+      {
+        "id": "fbfa5b31-1e19-4af1-915d-78f9c3efa6c4",
+        "statName": "Pts",
+        "line": 23.5,
+        "overOdds": -118,
+        "underOdds": -105
+      },
+      {
+        "id": "525230f4-5522-4ddf-b82f-8f9dd08acd72",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": -137,
+        "underOdds": 111
+      },
+      {
+        "id": "863a1558-8a66-47d1-b044-c8232a467ef6",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "1399963d-30b1-49d5-b834-06168269a44d",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -115,
+        "underOdds": -107
+      },
+      {
+        "id": "8cc2ebc2-e241-444d-85d0-98f8d45d271c",
+        "statName": "PRA",
+        "line": 32.5,
+        "overOdds": -113,
+        "underOdds": -109
+      },
+      {
+        "id": "333e2363-2a14-45f5-9043-15a7eb3bc5cf",
+        "statName": "Reb + Ast",
+        "line": 9.5,
+        "overOdds": -104,
+        "underOdds": -120
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868019+00:00"
+  },
+  {
+    "id": "4d183b00-1656-438f-a9ee-4726e702b560",
+    "name": "Alperen Sengun",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251203_06-47ff78e7-5607-48d6-9c1a-bddb075dbe70.png",
+    "props": [
+      {
+        "id": "18e4cd40-497a-443d-bca4-de17eb4a3d27",
+        "statName": "Pts",
+        "line": 23.5,
+        "overOdds": -108,
+        "underOdds": -114
+      },
+      {
+        "id": "1dc0a302-550a-4ef4-877c-7e83e1a1e436",
+        "statName": "Reb",
+        "line": 10.5,
+        "overOdds": 112,
+        "underOdds": -137
+      },
+      {
+        "id": "8adcc1a9-de28-4ff6-a1f9-ae46ed903ae8",
+        "statName": "Ast",
+        "line": 6.5,
+        "overOdds": 117,
+        "underOdds": -145
+      },
+      {
+        "id": "82f5b3d9-3b17-4f5a-a8fa-b161b4ce6552",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": 175,
+        "underOdds": -218
+      },
+      {
+        "id": "bdb07d3a-3c70-4081-aec9-7245b3238dd3",
+        "statName": "PRA",
+        "line": 40.5,
+        "overOdds": -106,
+        "underOdds": -117
+      },
+      {
+        "id": "a7ca735d-7790-4850-99c1-07bb52a8b026",
+        "statName": "Reb + Ast",
+        "line": 16.5,
+        "overOdds": 107,
+        "underOdds": -130
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868034+00:00"
+  },
+  {
+    "id": "fede9247-aa66-4a0d-81c6-48be5de3e3d9",
+    "name": "Andrew Nembhard",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251023_15-02acc094-76ab-4b3e-b51d-a351a9bab6b9.png",
+    "props": [
+      {
+        "id": "1d4dfe63-f01e-44ad-9b1f-f4fd950f80e1",
+        "statName": "Pts",
+        "line": 16.5,
+        "overOdds": 108,
+        "underOdds": -134
+      },
+      {
+        "id": "254a7495-7753-4afa-bc71-a45c60ab7515",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -134,
+        "underOdds": 109
+      },
+      {
+        "id": "663c19bb-60b6-49a1-8b14-a6dba8de62bd",
+        "statName": "Ast",
+        "line": 7.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "74e1caa2-8dc8-4ed3-9d95-268d43a57df1",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 105,
+        "underOdds": -129
+      },
+      {
+        "id": "54bae5ee-aa90-4fe0-8cad-3099e490b3c9",
+        "statName": "PRA",
+        "line": 26.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "fe2c1905-63a6-428d-ad52-e5210b395950",
+        "statName": "Reb + Ast",
+        "line": 10.5,
+        "overOdds": -112,
+        "underOdds": -112
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868044+00:00"
+  },
+  {
+    "id": "931bdfff-e42e-4605-9cf3-6af84f643175",
+    "name": "Clint Capela",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251201_21-c37dafbb-a269-41f6-813f-bdb4da388203.png",
+    "props": [
+      {
+        "id": "3f9a469d-dbc1-4f5e-8ff6-db0a99e72ce1",
+        "statName": "Pts",
+        "line": 5.5,
+        "overOdds": 105,
+        "underOdds": -129
+      },
+      {
+        "id": "4a90d11a-f9b6-43ee-8367-e574b4ec9bdc",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": -139,
+        "underOdds": 114
+      },
+      {
+        "id": "fa471b85-231d-4165-abc9-e78909bc201c",
+        "statName": "PRA",
+        "line": 11.5,
+        "overOdds": -106,
+        "underOdds": -117
+      },
+      {
+        "id": "8ae4b1a7-9814-45fa-a8a2-ac289a3075c3",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": 1140,
+        "underOdds": -110
+      },
+      {
+        "id": "2e2cde19-ba9b-4152-bf05-9638bbfd863b",
+        "statName": "Offensive Reb",
+        "line": 2.5,
+        "overOdds": -148,
+        "underOdds": -110
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868053+00:00"
+  },
+  {
+    "id": "b8ba5c08-3d23-4c9a-8d33-d183f1211b9d",
+    "name": "Dorian Finney-Smith",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251015_21-426357dc-340b-4d89-8e3b-7d6b4022b460.png",
+    "props": [
+      {
+        "id": "e0dad113-589a-41f2-abee-9acbe57ff26a",
+        "statName": "Pts",
+        "line": 3.5,
+        "overOdds": -114,
+        "underOdds": -108
+      },
+      {
+        "id": "6b3642d9-4ca2-46d7-b08c-5df1920f12dd",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": 113,
+        "underOdds": -139
+      },
+      {
+        "id": "c4109ad4-92d9-4e72-8534-902807aa792f",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": -182,
+        "underOdds": 147
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868060+00:00"
+  },
+  {
+    "id": "47f4506a-8f13-40d3-a270-c828160c19c5",
+    "name": "Jabari Smith Jr.",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251024_14-293be24b-3a94-40b2-a7a4-a1dd788302e9.png",
+    "props": [
+      {
+        "id": "27690ad5-639e-49e6-b36f-cfb1f1986149",
+        "statName": "Pts",
+        "line": 14.5,
+        "overOdds": -121,
+        "underOdds": -102
+      },
+      {
+        "id": "48329e52-fc9e-4df7-9dda-2854ea370ca6",
+        "statName": "Reb",
+        "line": 7.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "2ca1bebf-8f3e-418e-b0f6-f195f1b557cc",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -182,
+        "underOdds": 149
+      },
+      {
+        "id": "b99fff37-51b2-4cc9-ad94-c77c618d76f0",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -157,
+        "underOdds": 126
+      },
+      {
+        "id": "7ce60930-8953-4764-876f-9b14f0988164",
+        "statName": "PRA",
+        "line": 24.5,
+        "overOdds": -112,
+        "underOdds": -110
+      },
+      {
+        "id": "e60878fd-d6b7-432e-a275-63740d558b45",
+        "statName": "Reb + Ast",
+        "line": 9.5,
+        "overOdds": -107,
+        "underOdds": -115
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868073+00:00"
+  },
+  {
+    "id": "527ee0d2-a334-431a-ba8d-a413e1b5604e",
+    "name": "Aaron Nesmith",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251023_15-90d63a71-e4fe-411c-9773-2e74b5e1cb3b.png",
+    "props": [
+      {
+        "id": "749f34cb-8315-40a7-b0d9-43f5ae39d403",
+        "statName": "Pts",
+        "line": 12.5,
+        "overOdds": -105,
+        "underOdds": -118
+      },
+      {
+        "id": "bf8e814c-a41f-4a7d-ba9d-f235862778e1",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": 111,
+        "underOdds": -136
+      },
+      {
+        "id": "22dd0868-3ea2-4ee3-a05e-6a2b0db6ceb1",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -148,
+        "underOdds": 120
+      },
+      {
+        "id": "9ae8c9fb-c5a4-4726-a748-b2c2c37b6da0",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -170,
+        "underOdds": 141
+      },
+      {
+        "id": "92810ff0-28c9-48da-87f9-ba1e80f41950",
+        "statName": "PRA",
+        "line": 19.5,
+        "overOdds": 108,
+        "underOdds": -134
+      },
+      {
+        "id": "2eb879e0-06d3-4d74-8de4-117947d29f9f",
+        "statName": "1Q 3PM",
+        "line": 0.5,
+        "overOdds": -117,
+        "underOdds": -106
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868084+00:00"
+  },
+  {
+    "id": "1ce4b261-f26a-49ea-9f55-7b0524542d29",
+    "name": "Reed Sheppard",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251211_21-af1ba5e5-3f34-4ada-aa9f-f818baf7706f.png",
+    "props": [
+      {
+        "id": "d0b92d8e-958e-41ca-8997-38504937b180",
+        "statName": "Pts",
+        "line": 14.5,
+        "overOdds": -120,
+        "underOdds": -103
+      },
+      {
+        "id": "5481008f-bd65-47df-91a8-e246774759c8",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "1b742a1f-5a37-4abf-9bda-2a9581edebb8",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": 143,
+        "underOdds": -176
+      },
+      {
+        "id": "d3c16bc3-f015-4d89-af8d-6ce129e30241",
+        "statName": "3PM",
+        "line": 2.5,
+        "overOdds": 112,
+        "underOdds": -137
+      },
+      {
+        "id": "e75e7401-d193-45de-af17-4d4f8e9f2637",
+        "statName": "PRA",
+        "line": 21.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "ad8048f2-bf44-43de-bf11-61d5329fcb47",
+        "statName": "Pts + Reb",
+        "line": 17.5,
+        "overOdds": -112,
+        "underOdds": -112
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868094+00:00"
+  },
+  {
+    "id": "8a5ba59e-34a9-4324-9224-19b7fb6ca2d1",
+    "name": "Bennedict Mathurin",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251023_15-3f98b652-71d4-4a40-949d-41c33dddd15d.png",
+    "props": [
+      {
+        "id": "ec51a29c-a3be-4fc9-b59c-7b45650df6f0",
+        "statName": "Pts",
+        "line": 15.5,
+        "overOdds": -120,
+        "underOdds": -104
+      },
+      {
+        "id": "f982bff2-a08f-4407-88b3-5f34e6fb59f1",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "fb8d04a2-f3d3-495e-a4b8-0284b80c4200",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -182,
+        "underOdds": 146
+      },
+      {
+        "id": "866e971e-ad61-43f3-b6e0-f766e112cac8",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 107,
+        "underOdds": -132
+      },
+      {
+        "id": "88856d2e-7e02-4198-ab0b-3c4ba734a96f",
+        "statName": "PRA",
+        "line": 22.5,
+        "overOdds": -107,
+        "underOdds": -112
+      },
+      {
+        "id": "6cc57464-9441-4386-81b7-aaf06123cedc",
+        "statName": "Pts + Reb",
+        "line": 19.5,
+        "overOdds": -122,
+        "underOdds": 100
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868106+00:00"
+  },
+  {
+    "id": "33847d7f-1e1c-4dee-b08e-9809194e36e8",
+    "name": "Amen Thompson",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_04-b8b323c1-5691-43a4-9c48-707531803d6a.png",
+    "props": [
+      {
+        "id": "58752c0f-df26-456a-955a-0b8147c549f3",
+        "statName": "Pts",
+        "line": 19.5,
+        "overOdds": -107,
+        "underOdds": -115
+      },
+      {
+        "id": "877405be-6d24-4426-89eb-8649f8b06450",
+        "statName": "Reb",
+        "line": 7.5,
+        "overOdds": -132,
+        "underOdds": 107
+      },
+      {
+        "id": "2973ec72-aa86-4b33-a95f-089cd1e0a8c6",
+        "statName": "Ast",
+        "line": 6.5,
+        "overOdds": 120,
+        "underOdds": -152
+      },
+      {
+        "id": "2a229676-a858-4180-b565-1f6f88c825cd",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": 221,
+        "underOdds": -271
+      },
+      {
+        "id": "d3d99b1b-23a3-455b-9f9d-8c579b7acf72",
+        "statName": "PRA",
+        "line": 33.5,
+        "overOdds": -109,
+        "underOdds": -113
+      },
+      {
+        "id": "add78b12-976f-4971-845d-bad3a4882c91",
+        "statName": "Reb + Ast",
+        "line": 14.5,
+        "overOdds": 108,
+        "underOdds": -134
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868123+00:00"
+  },
+  {
+    "id": "c0d30857-df0e-4fe2-824e-a5a61e78fbd9",
+    "name": "T.J. McConnell",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251111_18-e3dfa2a2-6272-4f3f-adf0-dd5dadea9481.png",
+    "props": [
+      {
+        "id": "deb92e87-c6ce-4330-ba11-a5442582b9b1",
+        "statName": "Pts",
+        "line": 7.5,
+        "overOdds": -127,
+        "underOdds": 104
+      },
+      {
+        "id": "8ca20ee0-aa1d-44b9-aecc-7456c389f23a",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": 126,
+        "underOdds": -154
+      },
+      {
+        "id": "5cede8f4-275b-4e53-8e6e-9c15d3f6d6a3",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": -167,
+        "underOdds": 135
+      },
+      {
+        "id": "49087ac7-54b2-4570-9f2c-e392e031a419",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": 297,
+        "underOdds": -400
+      },
+      {
+        "id": "2c210e2b-6768-475c-be8b-960016d89060",
+        "statName": "PRA",
+        "line": 14.5,
+        "overOdds": -122,
+        "underOdds": 100
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868133+00:00"
+  },
+  {
+    "id": "84912f26-e403-49b3-8378-41e12c065097",
+    "name": "Tari Eason",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-e7373530-b566-4f36-b0de-0510b6d94e0e.png",
+    "props": [
+      {
+        "id": "8d0bdb68-a7ba-43af-a79a-95df2ff52b43",
+        "statName": "Pts",
+        "line": 15.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "d6f794d2-556f-4e74-a0de-9634acd1157d",
+        "statName": "Reb",
+        "line": 6.5,
+        "overOdds": -127,
+        "underOdds": 104
+      },
+      {
+        "id": "eb99eda8-5fd0-4016-8226-1cea7d37877b",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -154,
+        "underOdds": 125
+      },
+      {
+        "id": "35029164-12ca-4adf-9602-5eeacd22a319",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -141,
+        "underOdds": 117
+      },
+      {
+        "id": "8ddaa0e9-4d63-4165-bac0-4d6ae299227e",
+        "statName": "PRA",
+        "line": 23.5,
+        "overOdds": -117,
+        "underOdds": -106
+      },
+      {
+        "id": "91ab8b0a-64f6-4e89-b726-146d5c8c435e",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": -130,
+        "underOdds": 106
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868146+00:00"
+  },
+  {
+    "id": "1f062e69-6efb-4708-9002-d28458cf0076",
+    "name": "Jay Huff",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251023_20-1d1fa699-a455-4082-9df8-f97dbb0ca678.png",
+    "props": [
+      {
+        "id": "4c4419d1-2972-4cc3-818d-4e55590968d0",
+        "statName": "Pts",
+        "line": 7.5,
+        "overOdds": 103,
+        "underOdds": -129
+      },
+      {
+        "id": "08856738-894d-425f-96d0-c19c21d9277a",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": 111,
+        "underOdds": -137
+      },
+      {
+        "id": "02e6d576-af0c-49ac-bdb8-98fa8f91bc29",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 185,
+        "underOdds": -233
+      },
+      {
+        "id": "0cba893c-736e-47f7-888e-8ee879d75e88",
+        "statName": "PRA",
+        "line": 12.5,
+        "overOdds": -115,
+        "underOdds": -106
+      },
+      {
+        "id": "20be14b8-0572-4257-99a7-739f1c268fe9",
+        "statName": "Blocks",
+        "line": 1.5,
+        "overOdds": -108,
+        "underOdds": -114
+      },
+      {
+        "id": "0c43f061-76d0-4a2a-93a9-e29d13d70e0b",
+        "statName": "Blocks + Steals",
+        "line": 2.5,
+        "overOdds": 127,
+        "underOdds": -157
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868158+00:00"
+  },
+  {
+    "id": "130e566f-9d73-4d5b-80d1-329ec3f2b986",
+    "name": "Josh Okogie",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251024_22-1938fb4b-347a-43fd-ba41-1abdb9540699.png",
+    "props": [
+      {
+        "id": "193cc632-1d82-430c-83e7-33df07ef7f6d",
+        "statName": "Pts",
+        "line": 7.5,
+        "overOdds": 101,
+        "underOdds": -124
+      },
+      {
+        "id": "c9a9ec89-7796-40a1-9515-86040fb83776",
+        "statName": "Reb",
+        "line": 3.5,
+        "overOdds": -148,
+        "underOdds": 120
+      },
+      {
+        "id": "0d161c92-530d-4fc6-89dc-4b010b89d364",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": 120,
+        "underOdds": -150
+      },
+      {
+        "id": "1d1640d7-1ba5-4e7f-9324-e20848f5287f",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 185,
+        "underOdds": -233
+      },
+      {
+        "id": "c46ea92e-2b88-4bdd-aee2-474c61daed6d",
+        "statName": "PRA",
+        "line": 12.5,
+        "overOdds": 101,
+        "underOdds": -124
+      },
+      {
+        "id": "fa5f530e-0f25-4d91-9440-019b17b7fae8",
+        "statName": "Steals",
+        "line": 1.5,
+        "overOdds": 181,
+        "underOdds": -228
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868169+00:00"
+  },
+  {
+    "id": "1fe44598-87f0-4708-83ae-0496ed8d7f13",
+    "name": "Jarace Walker",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251111_18-6fd99205-e159-4ff2-b291-80fb2d067bb3.png",
+    "props": [
+      {
+        "id": "f235b714-da24-42ba-9d09-7ddb4cdcd1b6",
+        "statName": "Pts",
+        "line": 9.5,
+        "overOdds": -130,
+        "underOdds": 106
+      },
+      {
+        "id": "76da6e21-0934-434e-a8ce-9ea50f2977cc",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": 106,
+        "underOdds": -130
+      },
+      {
+        "id": "bf43cfda-e5b4-4d04-beb0-cb4ea72c5530",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -141,
+        "underOdds": 117
+      },
+      {
+        "id": "f4d05e72-ca63-4049-9512-a549623d97ad",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 122,
+        "underOdds": -148
+      },
+      {
+        "id": "0295548e-e4c4-4553-9697-d3f73d3d01e9",
+        "statName": "PRA",
+        "line": 16.5,
+        "overOdds": -105,
+        "underOdds": -118
+      },
+      {
+        "id": "678f2da2-2c12-4384-91e8-4d10546e8f9e",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": 1940,
+        "underOdds": -110
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868180+00:00"
+  },
+  {
+    "id": "63358701-4407-49b6-abf8-3af0e002a0a8",
+    "name": "Johnny Furphy",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251015_21-222364c7-dae9-44db-830d-cdece37e174d.png",
+    "props": [
+      {
+        "id": "cca4ad58-cab3-45e4-955d-310080f4d16a",
+        "statName": "Pts",
+        "line": 3.5,
+        "overOdds": -132,
+        "underOdds": 108
+      },
+      {
+        "id": "9222a5c3-b034-4501-ba1e-f7262433f93b",
+        "statName": "Reb",
+        "line": 3.5,
+        "overOdds": -139,
+        "underOdds": 113
+      },
+      {
+        "id": "bb643524-c163-4c9c-9f35-7444318d56a8",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": 106,
+        "underOdds": -130
+      }
+    ],
+    "opponent": "HOU @ IND",
+    "gameTime": "12:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868188+00:00"
+  },
+  {
+    "id": "5fa7968e-42e8-4645-b651-9a9393cae61d",
+    "name": "Anthony Edwards",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-d0c7135a-1aea-40cb-ba20-df656de71749.png",
+    "props": [
+      {
+        "id": "b175bc09-8b98-4ba4-a23b-2580761568a7",
+        "statName": "Pts",
+        "line": 30.5,
+        "overOdds": -105,
+        "underOdds": -118
+      },
+      {
+        "id": "b7c4a766-0feb-4c12-8f72-7db7d4cbe6c6",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": 109,
+        "underOdds": -134
+      },
+      {
+        "id": "08830495-90e6-4b8a-9ac9-60466590ef09",
+        "statName": "Ast",
+        "line": 4.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "69157d4d-df9f-4713-89bd-53bda2d6078c",
+        "statName": "3PM",
+        "line": 3.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "251d1554-4c6f-4d15-a751-958566ea49e1",
+        "statName": "PRA",
+        "line": 40.5,
+        "overOdds": -120,
+        "underOdds": -104
+      },
+      {
+        "id": "f2fffc46-2a17-410e-b4d5-f42cf39c2484",
+        "statName": "Reb + Ast",
+        "line": 10.5,
+        "overOdds": 113,
+        "underOdds": -139
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868206+00:00"
+  },
+  {
+    "id": "b56f125f-5890-4fcb-85a7-b023645fb1be",
+    "name": "Julius Randle",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-24c85a15-686e-4161-934b-40948188fa36.png",
+    "props": [
+      {
+        "id": "f78631ad-7d39-4048-a0c9-6e5fd1dc0165",
+        "statName": "Pts",
+        "line": 23.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "edb3b1d3-2dc2-4fb7-a997-56d3f5c20cf3",
+        "statName": "Reb",
+        "line": 6.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "1dfdf6d1-e135-41c5-8f40-2540406042a0",
+        "statName": "Ast",
+        "line": 5.5,
+        "overOdds": 106,
+        "underOdds": -130
+      },
+      {
+        "id": "40d9e4f3-28d7-4255-84e5-20436f19683f",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "8961f2cf-d809-4dbe-bfe0-161f36bb1786",
+        "statName": "PRA",
+        "line": 35.5,
+        "overOdds": -106,
+        "underOdds": -117
+      },
+      {
+        "id": "25a628f0-183d-4632-b796-d9ad06a3ba33",
+        "statName": "Reb + Ast",
+        "line": 11.5,
+        "overOdds": -134,
+        "underOdds": 108
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868222+00:00"
+  },
+  {
+    "id": "60a5e271-34d5-48b0-b7ff-5d7c97d02663",
+    "name": "Rudy Gobert",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-37fbc3a5-0d10-4e22-803b-baa2ea0cdb12.png",
+    "props": [
+      {
+        "id": "dccd52e4-ee8e-4516-9c61-5df1f478639f",
+        "statName": "Pts",
+        "line": 10.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "0f252336-dfaf-46f6-bec2-bfe79dccd12d",
+        "statName": "Reb",
+        "line": 12.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "597fc119-5501-4c9c-8dec-b5cad88968b1",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -159,
+        "underOdds": 128
+      },
+      {
+        "id": "c289e3f5-24f2-4d45-bbd0-d7c15938d1f7",
+        "statName": "PRA",
+        "line": 24.5,
+        "overOdds": -122,
+        "underOdds": 100
+      },
+      {
+        "id": "736926a7-366c-485e-9dbd-e8c33c7ff133",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": -114,
+        "underOdds": -108
+      },
+      {
+        "id": "0301d17d-94f9-4829-960e-fc4afb802154",
+        "statName": "1Q Reb",
+        "line": 3.5,
+        "overOdds": -107,
+        "underOdds": -115
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868234+00:00"
+  },
+  {
+    "id": "afe45364-8553-4f64-95fb-b54b93cd0a98",
+    "name": "Donte DiVincenzo",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-9cfad453-b323-43dc-a066-6cd0a21745ad.png",
+    "props": [
+      {
+        "id": "edea883c-135a-41be-8269-f293115a1b66",
+        "statName": "Pts",
+        "line": 14.5,
+        "overOdds": -102,
+        "underOdds": -121
+      },
+      {
+        "id": "99f8b45d-4a77-4b08-b23d-6b4b43688750",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": -109,
+        "underOdds": -113
+      },
+      {
+        "id": "b9bec642-9f6c-45ee-8ee8-21090b9689ec",
+        "statName": "Ast",
+        "line": 4.5,
+        "overOdds": -137,
+        "underOdds": 115
+      },
+      {
+        "id": "da64c232-6a4d-4012-a4bb-4756d41d9012",
+        "statName": "3PM",
+        "line": 3.5,
+        "overOdds": 132,
+        "underOdds": -162
+      },
+      {
+        "id": "b32bd9bf-1d57-434d-9615-203c0c122bf9",
+        "statName": "PRA",
+        "line": 23.5,
+        "overOdds": -117,
+        "underOdds": -106
+      },
+      {
+        "id": "8a76d74b-05ca-4d1c-983a-bf697b470a4c",
+        "statName": "Reb + Ast",
+        "line": 9.5,
+        "overOdds": -114,
+        "underOdds": -108
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868246+00:00"
+  },
+  {
+    "id": "643fcf01-0598-4533-b0eb-e5c21d7ce74e",
+    "name": "Jaden McDaniels",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-aa5536d2-4d75-43fb-8df3-47fbf99d3b7c.png",
+    "props": [
+      {
+        "id": "72c03004-0655-461b-a23d-325952d56e1e",
+        "statName": "Pts",
+        "line": 16.5,
+        "overOdds": -106,
+        "underOdds": -117
+      },
+      {
+        "id": "c2ec95c3-88e7-4c28-b7fb-1976796349bb",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": -112,
+        "underOdds": -110
+      },
+      {
+        "id": "c6596bec-8d24-4a47-a32e-04dd3bb696a0",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": -162,
+        "underOdds": 128
+      },
+      {
+        "id": "814e4b72-47b3-422a-8ec3-4ecdc2b9f9ca",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 106,
+        "underOdds": -130
+      },
+      {
+        "id": "42f2e2a1-efe3-4d8a-b51f-6925fa2c8561",
+        "statName": "PRA",
+        "line": 23.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "8b08d7e6-03a8-4bdc-b179-f0177e8e5f08",
+        "statName": "Reb + Ast",
+        "line": 7.5,
+        "overOdds": -112,
+        "underOdds": -112
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868261+00:00"
+  },
+  {
+    "id": "0d47cb42-8184-4f85-bd68-45736c37e825",
+    "name": "Kentavious Caldwell-Pope",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-cecc054e-b9ec-4c71-8bbb-5ee665a8c3a9.png",
+    "props": [
+      {
+        "id": "313e7fe7-033b-4b50-b554-1e9a9bbc41f5",
+        "statName": "Pts",
+        "line": 7.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "9ccc4c71-79d3-42da-89f2-ec4d4c0989bd",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -141,
+        "underOdds": 115
+      },
+      {
+        "id": "3ec60a3a-5e1b-4788-821e-7f1ab9bf3a12",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -152,
+        "underOdds": 124
+      },
+      {
+        "id": "69c807ae-201f-4d5e-80c4-a414417bb398",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 179,
+        "underOdds": -223
+      },
+      {
+        "id": "017a3f1f-40e0-4d79-a456-a70ccd383042",
+        "statName": "PRA",
+        "line": 12.5,
+        "overOdds": -120,
+        "underOdds": -104
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868274+00:00"
+  },
+  {
+    "id": "6ee3e8c2-d460-44cc-9c6d-1433cba63dfd",
+    "name": "Jaren Jackson Jr.",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-3e492a6a-ed3c-499d-b3f5-ff68ca16f6fd.png",
+    "props": [
+      {
+        "id": "e08b2bc3-2d36-471c-9332-c59d485e7a70",
+        "statName": "Pts",
+        "line": 19.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "21c4f511-3e72-4953-9641-ad02fc1d660b",
+        "statName": "Reb",
+        "line": 6.5,
+        "overOdds": 113,
+        "underOdds": -139
+      },
+      {
+        "id": "4ab22a2f-8953-4f2c-b33c-62f8977115cb",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -145,
+        "underOdds": 118
+      },
+      {
+        "id": "0bc03de6-4200-42b0-ab73-d5556f22b202",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "a80b3c58-7df8-4ccd-a5ff-e4a01112a59b",
+        "statName": "PRA",
+        "line": 29.5,
+        "overOdds": -106,
+        "underOdds": -117
+      },
+      {
+        "id": "e973a8b1-75b8-4c66-a8e5-93e6425b217f",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": 107,
+        "underOdds": -130
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868290+00:00"
+  },
+  {
+    "id": "b220d07d-7cfc-4825-bcdc-2c3829a4c76d",
+    "name": "Naz Reid",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-823b2161-0c34-494c-9d7c-b438152f4f4d.png",
+    "props": [
+      {
+        "id": "eb55628e-2d68-490c-bf1f-25208b1a4ce9",
+        "statName": "Pts",
+        "line": 17.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "62b38336-9491-4e97-a753-23d664c1c2c8",
+        "statName": "Reb",
+        "line": 7.5,
+        "overOdds": 107,
+        "underOdds": -132
+      },
+      {
+        "id": "53ecb185-3499-43a7-8fd2-4d7825221a37",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": -154,
+        "underOdds": 128
+      },
+      {
+        "id": "ea06ef48-49ec-42ca-84f6-6397b2ce0f7b",
+        "statName": "3PM",
+        "line": 2.5,
+        "overOdds": -152,
+        "underOdds": 126
+      },
+      {
+        "id": "1b4f9f8d-0e48-472d-b9fe-5bcf2128cfa1",
+        "statName": "PRA",
+        "line": 27.5,
+        "overOdds": -107,
+        "underOdds": -115
+      },
+      {
+        "id": "00fafffd-a917-46ea-b0a8-8d4325b3636f",
+        "statName": "Reb + Ast",
+        "line": 10.5,
+        "overOdds": -103,
+        "underOdds": -121
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868307+00:00"
+  },
+  {
+    "id": "36d38dda-108a-494d-98c8-a59af23b4ea4",
+    "name": "Vince Williams Jr.",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251111_18-0e5eb37e-e112-4587-98d8-8a9b46254f28.png",
+    "props": [
+      {
+        "id": "7866c185-959d-44d4-9c73-b9301467c6cb",
+        "statName": "Pts",
+        "line": 7.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "384166d2-298c-4502-9fa8-a8c3d61515c9",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": 123,
+        "underOdds": -152
+      },
+      {
+        "id": "1d4cad7c-0970-48ae-beaa-8957bf398302",
+        "statName": "Ast",
+        "line": 4.5,
+        "overOdds": 127,
+        "underOdds": -157
+      },
+      {
+        "id": "cf30e009-73e7-4e25-b298-80e830773133",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 149,
+        "underOdds": -186
+      },
+      {
+        "id": "98371032-97d4-402f-b340-82bc4afd9d1a",
+        "statName": "PRA",
+        "line": 16.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "d252ab42-2f4d-4edd-a577-d2c70c0edb6a",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": 106,
+        "underOdds": -130
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868317+00:00"
+  },
+  {
+    "id": "f15c44c6-40e2-4b01-9297-08dc9651e22e",
+    "name": "Jock Landale",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-02dc6e18-95a4-4919-b4fc-f8a981ccd359.png",
+    "props": [
+      {
+        "id": "a0043d49-73f1-40c5-b16e-f8f2f6662c82",
+        "statName": "Pts",
+        "line": 11.5,
+        "overOdds": -120,
+        "underOdds": -104
+      },
+      {
+        "id": "aca8a69c-6af6-4555-803d-6aad108f4fb8",
+        "statName": "Reb",
+        "line": 8.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "eeacdc87-7b3c-4d56-be0b-66315a090670",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -118,
+        "underOdds": -105
+      },
+      {
+        "id": "b2fffb52-a5a8-4cb6-bb28-b0615c13de90",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": -182,
+        "underOdds": 147
+      },
+      {
+        "id": "104e28cf-741b-461c-bfb7-71ecb6445380",
+        "statName": "PRA",
+        "line": 21.5,
+        "overOdds": -115,
+        "underOdds": -107
+      },
+      {
+        "id": "73f1f9bb-c1ca-43ed-b86a-e66af8a56093",
+        "statName": "Reb + Ast",
+        "line": 9.5,
+        "overOdds": -122,
+        "underOdds": 100
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868332+00:00"
+  },
+  {
+    "id": "ed7b7236-22d1-4cf8-aa75-e3498df98dc1",
+    "name": "Cam Spencer",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251111_18-9e51be65-7d39-433c-8d8c-de896da6267d.png",
+    "props": [
+      {
+        "id": "2197b629-9848-4b1b-956c-beae242755ca",
+        "statName": "Pts",
+        "line": 9.5,
+        "overOdds": -102,
+        "underOdds": -121
+      },
+      {
+        "id": "3ecd44e7-1b44-4a6c-a547-fdc9371c260c",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -143,
+        "underOdds": 117
+      },
+      {
+        "id": "2c81289f-c19c-461b-a56e-b52930cf090b",
+        "statName": "Ast",
+        "line": 5.5,
+        "overOdds": 122,
+        "underOdds": -150
+      },
+      {
+        "id": "366a33dc-efe2-4bd4-83f0-9e53d8b2b9ec",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "ff19ce68-6fe5-4a32-ab99-a70612daaf2c",
+        "statName": "PRA",
+        "line": 17.5,
+        "overOdds": -108,
+        "underOdds": -114
+      },
+      {
+        "id": "274edcd9-2ad5-468c-8f72-fe5cc5999db0",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": 110,
+        "underOdds": -136
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868345+00:00"
+  },
+  {
+    "id": "c47d3b6a-9d07-48fc-9469-f8616d33b187",
+    "name": "Ty Jerome",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251015_21-03cf6eb6-688a-49b1-a4cc-f10c39c21725.png",
+    "props": [
+      {
+        "id": "98450d40-b999-4883-ae42-7b81369c6103",
+        "statName": "Pts",
+        "line": 10.5,
+        "overOdds": -108,
+        "underOdds": -114
+      },
+      {
+        "id": "89d761d6-8532-4cb8-ad5e-3f28ee4805ab",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": 117,
+        "underOdds": -143
+      },
+      {
+        "id": "faba60cd-9cf4-4aa5-b574-2fc0bbefefcc",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": 108,
+        "underOdds": -134
+      },
+      {
+        "id": "0364be2c-c7be-4c1e-b323-86a387040196",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 119,
+        "underOdds": -148
+      },
+      {
+        "id": "e37749dc-395f-4074-aa9c-8bd4a8b5e62a",
+        "statName": "PRA",
+        "line": 16.5,
+        "overOdds": -106,
+        "underOdds": -117
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868355+00:00"
+  },
+  {
+    "id": "ba7e0647-7bf4-4a58-8357-b092ed9f7635",
+    "name": "Cedric Coward",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251024_17-9f666f68-046c-4315-a89d-d9ec2e9a852d.png",
+    "props": [
+      {
+        "id": "30d73b1f-1a49-40e3-a435-fb9d869fe8bc",
+        "statName": "Pts",
+        "line": 12.5,
+        "overOdds": -115,
+        "underOdds": -107
+      },
+      {
+        "id": "b8cd0b90-e1dd-46a2-9936-561beb78d856",
+        "statName": "Reb",
+        "line": 6.5,
+        "overOdds": 105,
+        "underOdds": -129
+      },
+      {
+        "id": "f4f45e35-8d30-418d-a8d3-01cd23eb0514",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": -120,
+        "underOdds": -104
+      },
+      {
+        "id": "8bf8fc3d-e4c7-4b78-be2f-a3c8aba4086d",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 134,
+        "underOdds": -164
+      },
+      {
+        "id": "c2d0e9e9-2636-4415-9820-a7baf01f87be",
+        "statName": "PRA",
+        "line": 22.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "f3aa225e-b8ba-4f4d-9312-1ca731299db7",
+        "statName": "Reb + Ast",
+        "line": 9.5,
+        "overOdds": 108,
+        "underOdds": -134
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868369+00:00"
+  },
+  {
+    "id": "61e9316c-c6c7-4341-af4f-f225acbe0264",
+    "name": "Jaylen Wells",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-f2d36d30-3544-41cb-831d-afec9e256418.png",
+    "props": [
+      {
+        "id": "11cba25a-f9ea-4f7c-88b0-f0d7ae95bc4f",
+        "statName": "Pts",
+        "line": 11.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "22c58211-501a-473d-a85f-60a0f7703e82",
+        "statName": "Reb",
+        "line": 3.5,
+        "overOdds": -104,
+        "underOdds": -120
+      },
+      {
+        "id": "6fb6b749-7e7c-47a4-b9a1-b3e5492d104b",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -124,
+        "underOdds": 101
+      },
+      {
+        "id": "e852b612-221a-4052-8c84-6e648238981a",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -127,
+        "underOdds": 104
+      },
+      {
+        "id": "ab541b09-825d-435a-9426-7149d8f1b207",
+        "statName": "PRA",
+        "line": 18.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "741fe828-13dd-449c-b338-7e474cbf3003",
+        "statName": "3s Attempted",
+        "line": 5.5,
+        "overOdds": 108,
+        "underOdds": -136
+      }
+    ],
+    "opponent": "MIN @ MEM",
+    "gameTime": "12:30 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868380+00:00"
+  },
+  {
+    "id": "e8e35556-8bbd-445c-b47b-d58fd5c844b8",
+    "name": "Kawhi Leonard",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-c12fb587-fc86-471c-8a84-19caf31325ce.png",
+    "props": [
+      {
+        "id": "70a932b7-3ce0-4325-ab7f-45f1f0c95070",
+        "statName": "Pts",
+        "line": 24.5,
+        "overOdds": -122,
+        "underOdds": 100
+      },
+      {
+        "id": "f9aa90b6-870a-4781-837c-f373a7a0b4ff",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "e41e3ecd-8993-4905-9961-57b1c334200a",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": -102,
+        "underOdds": -122
+      },
+      {
+        "id": "f4a8cce2-32b1-41b8-96d3-9fa5faf163a4",
+        "statName": "3PM",
+        "line": 2.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "076e8ffe-78ee-4a3b-a89b-7cc45eaaa151",
+        "statName": "PRA",
+        "line": 33.5,
+        "overOdds": -121,
+        "underOdds": -103
+      },
+      {
+        "id": "90883577-92c9-4ab3-b35a-99032f9dc9e7",
+        "statName": "Reb + Ast",
+        "line": 9.5,
+        "overOdds": 113,
+        "underOdds": -139
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868396+00:00"
+  },
+  {
+    "id": "3441daf3-fdb0-46ed-8caa-61335e90a18d",
+    "name": "Joel Embiid",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-bf9ad0fd-0cb8-4360-8970-5f1b5cf3fa8d.png",
+    "props": [
+      {
+        "id": "6db016a3-2f93-4fa9-8d2d-bd10e135dfb9",
+        "statName": "Pts",
+        "line": 27.5,
+        "overOdds": -134,
+        "underOdds": 108
+      },
+      {
+        "id": "140abda3-7bf4-44b4-831d-35a00e85418a",
+        "statName": "Reb",
+        "line": 8.5,
+        "overOdds": -114,
+        "underOdds": -108
+      },
+      {
+        "id": "bac3c9aa-4bd6-430d-9f0c-3b3b1664f270",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": -176,
+        "underOdds": 142
+      },
+      {
+        "id": "2bd377b1-be18-431d-9e9a-efad771e669b",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 134,
+        "underOdds": -170
+      },
+      {
+        "id": "80fdfe50-3202-4919-9c0a-5e1554f3c1eb",
+        "statName": "PRA",
+        "line": 40.5,
+        "overOdds": -121,
+        "underOdds": -103
+      },
+      {
+        "id": "1d5ea91b-7ab1-4ca0-b000-cf1b11e4dae7",
+        "statName": "Reb + Ast",
+        "line": 12.5,
+        "overOdds": -121,
+        "underOdds": -103
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868411+00:00"
+  },
+  {
+    "id": "446ae12c-b571-45ea-a1ee-0afe159d53b8",
+    "name": "James Harden",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-a52b2c84-9c3d-4d6e-8a3b-10e75d11c2bc.png",
+    "props": [
+      {
+        "id": "c7bd06ae-db9c-4129-81aa-f4276e71e6bb",
+        "statName": "Pts",
+        "line": 23.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "bea3cb9d-b38b-4b61-bcb8-a366d769eefd",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": -150,
+        "underOdds": 122
+      },
+      {
+        "id": "d4fde23b-f854-4b2a-86bd-58f64359854c",
+        "statName": "Ast",
+        "line": 8.5,
+        "overOdds": -134,
+        "underOdds": 108
+      },
+      {
+        "id": "cc9d8775-a47d-4779-9567-ddea0f2c407b",
+        "statName": "3PM",
+        "line": 2.5,
+        "overOdds": -148,
+        "underOdds": 122
+      },
+      {
+        "id": "1c994324-76f5-43c9-a605-3735cf3ae3c0",
+        "statName": "PRA",
+        "line": 38.5,
+        "overOdds": -120,
+        "underOdds": -104
+      },
+      {
+        "id": "94a19eb1-7a1a-433d-b93e-4fd7e24204f7",
+        "statName": "Reb + Ast",
+        "line": 13.5,
+        "overOdds": -130,
+        "underOdds": 106
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868430+00:00"
+  },
+  {
+    "id": "65ee4627-6193-4614-8ec6-b9b4a98ee9e8",
+    "name": "Ivica Zubac",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-2da18268-82d4-4b40-a296-7ceddd435d0b.png",
+    "props": [
+      {
+        "id": "bf1cdb6f-0fcc-4fa3-9d74-8637439b7eb8",
+        "statName": "Pts",
+        "line": 13.5,
+        "overOdds": -130,
+        "underOdds": 103
+      },
+      {
+        "id": "a5fe3c2a-3b86-4ee2-90ab-91f986bb269e",
+        "statName": "Reb",
+        "line": 10.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "0dc2e82e-754c-423e-b7e5-6820ae564e1c",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": -130,
+        "underOdds": 108
+      },
+      {
+        "id": "b01b6522-b343-48e1-9796-5bed9a87081b",
+        "statName": "PRA",
+        "line": 26.5,
+        "overOdds": -115,
+        "underOdds": -107
+      },
+      {
+        "id": "b826f8d5-e53a-4ece-a77c-48c414936647",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": -124,
+        "underOdds": 100
+      },
+      {
+        "id": "2adc7ad3-1677-4bcb-95d3-d70c36b3f58c",
+        "statName": "1Q Pts",
+        "line": 3.5,
+        "overOdds": -148,
+        "underOdds": 121
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868443+00:00"
+  },
+  {
+    "id": "39933cb9-ca1a-40cf-9d3a-86c15f586449",
+    "name": "VJ Edgecombe",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-1bd4a869-80a3-47b7-bac9-789bda6e6e92.png",
+    "props": [
+      {
+        "id": "29c4f798-d3ec-4ed7-bde3-12cf9b80a5e6",
+        "statName": "Pts",
+        "line": 13.5,
+        "overOdds": -117,
+        "underOdds": -106
+      },
+      {
+        "id": "35c5e845-042e-461b-9c6c-ca28cb4a5ce5",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": 122,
+        "underOdds": -150
+      },
+      {
+        "id": "a5466251-f30b-4965-8dc6-9461d1ec1761",
+        "statName": "Ast",
+        "line": 4.5,
+        "overOdds": 136,
+        "underOdds": -167
+      },
+      {
+        "id": "7df3bdc0-b288-4574-88c9-2990bf7734d5",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": -162,
+        "underOdds": 132
+      },
+      {
+        "id": "cd9f9271-3e15-49f9-9001-9f8be0ebf7ab",
+        "statName": "PRA",
+        "line": 22.5,
+        "overOdds": -104,
+        "underOdds": -120
+      },
+      {
+        "id": "378b1511-1f1a-47d3-b0e9-5278a07b0abe",
+        "statName": "Reb + Ast",
+        "line": 8.5,
+        "overOdds": -141,
+        "underOdds": 115
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868455+00:00"
+  },
+  {
+    "id": "73d4fb27-030d-4c2d-bcc7-ced393ef6322",
+    "name": "Tyrese Maxey",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-75fc46eb-71d8-4d1a-984f-3747ccd7a4c9.png",
+    "props": [
+      {
+        "id": "dd5ceef5-d194-48f4-bfc4-a8d3d0feba36",
+        "statName": "Pts",
+        "line": 26.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "71345cce-eb4f-4ee7-87c1-b3d2c8c72bd7",
+        "statName": "Reb",
+        "line": 3.5,
+        "overOdds": 106,
+        "underOdds": -130
+      },
+      {
+        "id": "c77efdfc-ab17-4631-9139-ec363c3b1620",
+        "statName": "Ast",
+        "line": 6.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "3d4a8e85-c7c1-4d01-87b1-deb3b14759ab",
+        "statName": "3PM",
+        "line": 3.5,
+        "overOdds": 110,
+        "underOdds": -136
+      },
+      {
+        "id": "3fdac48f-81ee-4121-b63f-ca2ab5a2a1c1",
+        "statName": "PRA",
+        "line": 36.5,
+        "overOdds": -114,
+        "underOdds": -108
+      },
+      {
+        "id": "9e0be9cf-0e33-45b8-9b6f-f070edfbe55d",
+        "statName": "Reb + Ast",
+        "line": 10.5,
+        "overOdds": 103,
+        "underOdds": -125
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868473+00:00"
+  },
+  {
+    "id": "fc946619-6c83-4742-a0f7-6c1d864e9e69",
+    "name": "Brook Lopez",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-c179fb5c-9845-4e37-aef7-6e00d97548eb.png",
+    "props": [
+      {
+        "id": "8163b84c-8211-440b-9bd0-b71db7956cd0",
+        "statName": "Pts",
+        "line": 5.5,
+        "overOdds": -129,
+        "underOdds": 104
+      },
+      {
+        "id": "e4cfd0e1-1b5b-46b1-9b2d-16e5ea4b81df",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -122,
+        "underOdds": 100
+      },
+      {
+        "id": "b66488d8-71d8-485f-a2eb-f61465a2aebd",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 156,
+        "underOdds": -193
+      },
+      {
+        "id": "498abaaa-2d88-4463-bd71-3b14a06497ce",
+        "statName": "PRA",
+        "line": 9.5,
+        "overOdds": 101,
+        "underOdds": -124
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868484+00:00"
+  },
+  {
+    "id": "823d4a1d-aef5-449c-8db6-fbd1e491e7ae",
+    "name": "John Collins",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_21-28a2e698-9f33-4d4d-9a5d-9bea66ee42a1.png",
+    "props": [
+      {
+        "id": "0138cc7b-44c3-40e1-b23d-ac1fb4dede8c",
+        "statName": "Pts",
+        "line": 14.5,
+        "overOdds": -104,
+        "underOdds": -120
+      },
+      {
+        "id": "a5147195-2305-4438-944f-ab930d742d22",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": 107,
+        "underOdds": -130
+      },
+      {
+        "id": "27e5c272-d8f0-4bea-b317-a9e5857cf175",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 128,
+        "underOdds": -159
+      },
+      {
+        "id": "7e448a26-2c13-4315-9341-53606d20efdf",
+        "statName": "PRA",
+        "line": 20.5,
+        "overOdds": -107,
+        "underOdds": -114
+      },
+      {
+        "id": "b5db747a-e139-4dd0-a41a-2ed998547ed7",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": 1080,
+        "underOdds": -110
+      },
+      {
+        "id": "873ba2f6-b60c-4114-a83f-274d9b12f77d",
+        "statName": "1Q Pts",
+        "line": 4.5,
+        "overOdds": 108,
+        "underOdds": -132
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868496+00:00"
+  },
+  {
+    "id": "9964a48f-d3a6-400e-8556-6cbc66e6f69e",
+    "name": "Nicolas Batum",
+    "teamAbbr": "UNK",
+    "position": "PF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251024_22-a89ac040-715d-4057-8fc0-9d71ad06fa0a.png",
+    "props": [
+      {
+        "id": "3d7963c3-a5b8-4025-8f73-da618a2695ec",
+        "statName": "Pts",
+        "line": 4.5,
+        "overOdds": -113,
+        "underOdds": -109
+      },
+      {
+        "id": "a37c14ad-e0a8-4cfc-9a85-283eb76fad66",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -143,
+        "underOdds": 115
+      },
+      {
+        "id": "4fd2e3d6-16e3-4603-ab4e-87c57649ee7c",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 134,
+        "underOdds": -162
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868504+00:00"
+  },
+  {
+    "id": "6e274d7d-09c5-4a50-b698-824e0a52bb90",
+    "name": "Quentin Grimes",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-e8486226-53e1-4857-b5f0-8b6fe88bdd8a.png",
+    "props": [
+      {
+        "id": "9081519d-5f36-4d11-b3b8-a92caf2c3271",
+        "statName": "Pts",
+        "line": 8.5,
+        "overOdds": 103,
+        "underOdds": -125
+      },
+      {
+        "id": "2b50085d-8fad-4ee9-bafd-3346843b840d",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -112,
+        "underOdds": -112
+      },
+      {
+        "id": "2e7fb120-4c94-483e-b828-e46ff81a4a58",
+        "statName": "Ast",
+        "line": 2.5,
+        "overOdds": 136,
+        "underOdds": -167
+      },
+      {
+        "id": "2704bc1a-84b2-44e9-a513-9fd1532347e4",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 148,
+        "underOdds": -182
+      },
+      {
+        "id": "3ced0f2a-3e0c-4565-b911-3d4e0ea0aea5",
+        "statName": "PRA",
+        "line": 13.5,
+        "overOdds": 102,
+        "underOdds": -125
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868513+00:00"
+  },
+  {
+    "id": "4fe6205f-3b28-4f12-af14-95bfa647875e",
+    "name": "Kris Dunn",
+    "teamAbbr": "UNK",
+    "position": "PG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251024_22-56c796d6-74d3-4881-9166-7f528e2b67f6.png",
+    "props": [
+      {
+        "id": "699beb6f-10bb-4406-9066-aae55d954a56",
+        "statName": "Pts",
+        "line": 8.5,
+        "overOdds": 104,
+        "underOdds": -127
+      },
+      {
+        "id": "7e929917-bf60-4f0b-8ada-2579e1af8b4c",
+        "statName": "Reb",
+        "line": 3.5,
+        "overOdds": 107,
+        "underOdds": -132
+      },
+      {
+        "id": "4a27475e-d3ce-4cb3-9e21-f9e74e0eda01",
+        "statName": "Ast",
+        "line": 3.5,
+        "overOdds": -102,
+        "underOdds": -122
+      },
+      {
+        "id": "c6dbe929-4c63-40cb-83e7-181bd764f647",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 162,
+        "underOdds": -205
+      },
+      {
+        "id": "69dbd83d-662b-4f35-88b0-088565123f54",
+        "statName": "PRA",
+        "line": 15.5,
+        "overOdds": -121,
+        "underOdds": -103
+      },
+      {
+        "id": "38fc6e8c-5368-40fe-bdeb-dcb9dc465068",
+        "statName": "Steals",
+        "line": 1.5,
+        "overOdds": 151,
+        "underOdds": -189
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868524+00:00"
+  },
+  {
+    "id": "8e8b48e2-6b53-4db1-904c-710c495bad2a",
+    "name": "Jared McCain",
+    "teamAbbr": "UNK",
+    "position": "SG",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251202_20-2646b0b2-4aa8-40f8-ad9d-f0e97590c8d8.png",
+    "props": [
+      {
+        "id": "5870947d-e3bf-4df3-a52f-90f3d4a890c0",
+        "statName": "Pts",
+        "line": 5.5,
+        "overOdds": -127,
+        "underOdds": 104
+      },
+      {
+        "id": "631a751c-750f-4dac-b7e0-915ccd213151",
+        "statName": "Reb",
+        "line": 1.5,
+        "overOdds": -125,
+        "underOdds": 102
+      },
+      {
+        "id": "6c88b118-e4b5-476f-b918-07648098a4a6",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": 142,
+        "underOdds": -176
+      },
+      {
+        "id": "8b610e88-ac92-4e08-911a-0a184448cdbd",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": -193,
+        "underOdds": 156
+      },
+      {
+        "id": "2675749c-966d-44f2-a5ae-7013871f5231",
+        "statName": "PRA",
+        "line": 9.5,
+        "overOdds": 100,
+        "underOdds": -125
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868533+00:00"
+  },
+  {
+    "id": "a1d68037-acec-4596-ad56-9cea344c3854",
+    "name": "Adem Bona",
+    "teamAbbr": "UNK",
+    "position": "C",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-d325bed1-c812-4bf4-b2a1-3cb32fcb86fa.png",
+    "props": [
+      {
+        "id": "e46ad4c4-d38c-4c0c-820f-4cc87e960d19",
+        "statName": "Pts",
+        "line": 2.5,
+        "overOdds": -114,
+        "underOdds": -108
+      },
+      {
+        "id": "154af635-203f-4815-bcb8-387677bcd85c",
+        "statName": "Reb",
+        "line": 2.5,
+        "overOdds": -150,
+        "underOdds": 122
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868539+00:00"
+  },
+  {
+    "id": "5a6d9324-cc0e-432b-8b40-44457bbc818c",
+    "name": "Kelly Oubre",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251021_16-7dfa0971-96be-4705-9811-f9f54758145f.png",
+    "props": [
+      {
+        "id": "bf05954b-0428-4f94-81b3-bd62bfd8d85b",
+        "statName": "Pts",
+        "line": 13.5,
+        "overOdds": -127,
+        "underOdds": 104
+      },
+      {
+        "id": "58570de6-b51e-4cc1-a905-626a13279d00",
+        "statName": "Reb",
+        "line": 4.5,
+        "overOdds": -122,
+        "underOdds": -102
+      },
+      {
+        "id": "5a606eb2-ca4b-4d97-921a-6bd0e16f506a",
+        "statName": "Ast",
+        "line": 1.5,
+        "overOdds": 131,
+        "underOdds": -162
+      },
+      {
+        "id": "42656954-0e49-429f-9cf9-8b0a9aeef64b",
+        "statName": "3PM",
+        "line": 1.5,
+        "overOdds": 105,
+        "underOdds": -129
+      },
+      {
+        "id": "e126c0d2-f120-4906-b711-322be23cb06c",
+        "statName": "PRA",
+        "line": 19.5,
+        "overOdds": -110,
+        "underOdds": -112
+      },
+      {
+        "id": "743f4b79-7d22-4cc6-ba12-676ece07f9a5",
+        "statName": "Double Doubles",
+        "line": 0.5,
+        "overOdds": 1620,
+        "underOdds": -110
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868551+00:00"
+  },
+  {
+    "id": "0c435cf5-29fe-45ab-9da6-afff11f32a52",
+    "name": "Dominick Barlow",
+    "teamAbbr": "UNK",
+    "position": "SF",
+    "imageName": "https://assets.underdogfantasy.com/player-images/nba/20251015_21-4589f8d1-66cd-4d57-a5b5-c7d130a0b43d.png",
+    "props": [
+      {
+        "id": "4d2697bf-a309-43b7-80a6-7396dac64e06",
+        "statName": "Pts",
+        "line": 5.5,
+        "overOdds": -117,
+        "underOdds": -106
+      },
+      {
+        "id": "0efbd722-77ae-438c-aaf2-2ffaf7152945",
+        "statName": "Reb",
+        "line": 5.5,
+        "overOdds": 115,
+        "underOdds": -141
+      },
+      {
+        "id": "93e90161-4de4-4536-880c-425ea933a381",
+        "statName": "3PM",
+        "line": 0.5,
+        "overOdds": 243,
+        "underOdds": -313
+      },
+      {
+        "id": "dc6c0af0-5c66-4866-83e5-6a9858da1b7d",
+        "statName": "PRA",
+        "line": 11.5,
+        "overOdds": -118,
+        "underOdds": -104
+      },
+      {
+        "id": "fbe83bb4-b409-4702-84d3-e4d550d0c42a",
+        "statName": "1Q Reb",
+        "line": 1.5,
+        "overOdds": 118,
+        "underOdds": -145
+      },
+      {
+        "id": "85cbc8c5-11b4-471b-8ef1-da5976a2b094",
+        "statName": "Offensive Reb",
+        "line": 2.5,
+        "overOdds": 154,
+        "underOdds": -110
+      }
+    ],
+    "opponent": "PHI @ LAC",
+    "gameTime": "03:00 AM",
+    "trending": "up",
+    "ai_analysis": "",
+    "source": "underdog",
+    "last_updated": "2026-02-02T19:37:52.868562+00:00"
+  }
+]
