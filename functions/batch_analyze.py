@@ -202,10 +202,10 @@ def fetch_json_httpx(url: str, headers: dict = None) -> tuple:
 
 def get_underdog_nba_props() -> dict:
     """
-    Fetch all NBA player props from Underdog Fantasy.
-    Returns structured data with players and their props.
+    Fetch NBA-ONLY player props from Underdog Fantasy.
+    Optimized to filter NBA data early and skip non-NBA processing.
     """
-    print("=== Fetching Underdog Fantasy Props ===")
+    print("=== Fetching Underdog Fantasy Props (NBA ONLY) ===")
 
     status, data = fetch_json_httpx(
         "https://api.underdogfantasy.com/v1/over_under_lines")
@@ -220,32 +220,38 @@ def get_underdog_nba_props() -> dict:
     lines = data.get("over_under_lines", [])
     games = data.get("games", [])
 
-    print(f"  Total players: {len(players_raw)}")
-    print(f"  Total lines: {len(lines)}")
+    print(f"  Total players (all sports): {len(players_raw)}")
+    print(f"  Total lines (all sports): {len(lines)}")
 
-    # Filter to NBA only
+    # EARLY FILTER: Only NBA players
     nba_players = {
         p["id"]: p for p in players_raw if p.get("sport_id") == "NBA"}
     print(f"  NBA players: {len(nba_players)}")
 
-    # Create appearance -> player mapping
+    if not nba_players:
+        print("  No NBA players found!")
+        return {"players": [], "games": []}
+
+    # EARLY FILTER: Only NBA games
+    nba_games = {g["id"]: g for g in games if g.get("sport_id") == "NBA"}
+    print(f"  NBA games: {len(nba_games)}")
+
+    # Create appearance -> player mapping (NBA only)
+    nba_player_ids = set(nba_players.keys())
     appearance_to_player = {}
     appearance_to_match = {}
     appearance_to_team_id = {}
+
     for app in appearances:
         player_id = app.get("player_id")
-        if player_id in nba_players:
+        if player_id in nba_player_ids:
             appearance_to_player[app["id"]] = player_id
             appearance_to_match[app["id"]] = app.get("match_id")
             appearance_to_team_id[app["id"]] = app.get("team_id", "")
 
-    # Create game lookup
-    games_by_id = {g["id"]: g for g in games}
-
-    # Build team_id -> abbreviation mapping from games
-    # Use string keys to avoid type mismatches
+    # Build team_id -> abbreviation mapping (NBA games only)
     team_id_to_abbr = {}
-    for game in games:
+    for game in nba_games.values():
         abbr_title = game.get("abbreviated_title", "")
         if " @ " in abbr_title:
             away_abbr, home_abbr = abbr_title.split(" @ ")
@@ -256,37 +262,42 @@ def get_underdog_nba_props() -> dict:
             if home_team_id:
                 team_id_to_abbr[str(home_team_id)] = home_abbr
 
-    # Group lines by player
+    # Pre-filter: get NBA appearance IDs for fast lookup
+    nba_appearance_ids = set(appearance_to_player.keys())
+
+    # Group lines by player (skip non-NBA lines early)
     players_with_props = {}
+    lines_processed = 0
+    lines_skipped = 0
 
     for line in lines:
         if line.get("status") != "active":
+            lines_skipped += 1
             continue
 
         ou = line.get("over_under", {})
         app_stat = ou.get("appearance_stat", {})
         app_id = app_stat.get("appearance_id", "")
 
-        if app_id not in appearance_to_player:
+        # Skip non-NBA lines immediately
+        if app_id not in nba_appearance_ids:
+            lines_skipped += 1
             continue
 
+        lines_processed += 1
         player_id = appearance_to_player[app_id]
         player = nba_players[player_id]
         match_id = appearance_to_match.get(app_id)
         team_id = appearance_to_team_id.get(app_id, "")
-        game = games_by_id.get(match_id, {})
+        game = nba_games.get(match_id, {})
 
         if player_id not in players_with_props:
-            # Try team_id lookup with string key, fallback to extracting from game title
             team_abbr = team_id_to_abbr.get(str(team_id), "")
             if not team_abbr and game:
-                # Try to infer from game abbreviated_title
                 abbr_title = game.get("abbreviated_title", "")
                 if " @ " in abbr_title:
                     away, home = abbr_title.split(" @ ")
-                    # If only two teams in game, we can't determine which is the player's
-                    # but at least we have the matchup context
-                    team_abbr = ""  # Will be resolved later with opponent display
+                    team_abbr = ""
             players_with_props[player_id] = {
                 "player": player,
                 "game": game,
@@ -314,13 +325,15 @@ def get_underdog_nba_props() -> dict:
 
         players_with_props[player_id]["props"].append(prop)
 
+    print(f"  Lines processed (NBA): {lines_processed}")
+    print(f"  Lines skipped (non-NBA/inactive): {lines_skipped}")
     print(f"  NBA players with props: {len(players_with_props)}")
     total_props = sum(len(p["props"]) for p in players_with_props.values())
     print(f"  Total NBA props: {total_props}")
 
     return {
         "players": list(players_with_props.values()),
-        "games": [g for g in games if g.get("sport_id") == "NBA"]
+        "games": list(nba_games.values())
     }
 
 
@@ -557,6 +570,14 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     """
     Fetch NBA player props from Underdog Fantasy and analyze with Gemini.
     Uses ESPN for schedule data and nba_api for player stats enrichment.
+
+    WORKFLOW:
+    1. Scrape all props from Underdog Fantasy
+    2. Enrich with NBA API stats
+    3. Calculate ranking scores for all props
+    4. Build prop cards and WRITE TO FIRESTORE FIRST (ensures data is saved)
+    5. Call Gemini 3 Pro for top 10 props only
+    6. Update those 10 docs with AI analysis
     """
 
     print("\n" + "="*60)
@@ -579,16 +600,31 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     print(
         f"\nProcessing {len(underdog_data['players'])} players with props...\n")
 
-    # 3. Enrich with NBA stats (parallel)
+    # 3. Enrich with NBA stats (parallel) - LIMIT TO TOP 40 PLAYERS
+    # NBA API calls are slow, so we only enrich players who might be featured
+    # First, do a quick preliminary sort by number of props (more props = likely more popular player)
+    players_to_process = underdog_data["players"]
+    players_to_process.sort(key=lambda p: len(
+        p.get("props", [])), reverse=True)
+
+    # Only enrich top 40 players with NBA API (rest get basic data)
+    MAX_ENRICHED_PLAYERS = 40
+    players_to_enrich = players_to_process[:MAX_ENRICHED_PLAYERS]
+    players_basic_only = players_to_process[MAX_ENRICHED_PLAYERS:]
+
+    print(f"  Will enrich {len(players_to_enrich)} players with NBA API")
+    print(f"  {len(players_basic_only)} players will have basic data only")
+
     enriched_players = []
 
-    def enrich_player(player_data):
+    def enrich_player(player_data, fetch_nba_stats=True):
         player = player_data["player"]
         player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(
         )
 
-        # Try to get NBA API stats
-        nba_stats = get_player_stats_quick(player_name)
+        nba_stats = None
+        if fetch_nba_stats:
+            nba_stats = get_player_stats_quick(player_name)
 
         return {
             "underdog_player": player,
@@ -599,9 +635,10 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             "name": player_name,
         }
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(enrich_player, p): p["player"].get(
-            "id") for p in underdog_data["players"]}
+    # Enrich top players with NBA API (reduced workers to avoid rate limiting)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(enrich_player, p, True): p["player"].get(
+            "id") for p in players_to_enrich}
         for future in as_completed(futures):
             try:
                 result = future.result()
@@ -609,11 +646,17 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 if result.get("nba_stats"):
                     print(f"✓ Enriched {result['name']}")
                 else:
-                    print(f"○ Basic data for {result['name']}")
+                    print(f"○ No NBA data for {result['name']}")
             except Exception as e:
                 print(f"✗ Error: {e}")
 
-    print(f"\n📊 Processed {len(enriched_players)} players\n")
+    # Add remaining players with basic data only (no NBA API calls)
+    for p in players_basic_only:
+        result = enrich_player(p, fetch_nba_stats=False)
+        enriched_players.append(result)
+
+    print(
+        f"\n📊 Processed {len(enriched_players)} total players ({len(players_to_enrich)} enriched)\n")
 
     # 4. Calculate ranking scores for all players
     print("📊 Calculating ranking scores...")
@@ -650,182 +693,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 
     print(f"✓ Marked top {featured_count} players as featured")
 
-    # 5. Gemini AI Analysis (per-prop, not per-player)
-    # Key format: "playername_statname" -> analysis
-    ai_by_prop = {}
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-
-    # Build list of top props to analyze (will be sorted later, but estimate top 20)
-    # First, collect all props with their ranking scores
-    all_props_for_ranking = []
-    for ep in enriched_players:
-        ud_player = ep["underdog_player"]
-        ud_props = ep["underdog_props"]
-        nba_stats = ep.get("nba_stats") or {}
-        player_averages = ep.get(
-            "player_averages", {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0})
-        ud_game = ep.get("underdog_game", {})
-
-        # Get player's team
-        player_team = ""
-        if nba_stats and nba_stats.get("team_code"):
-            player_team = nba_stats["team_code"]
-        elif ep.get("underdog_team_abbr"):
-            player_team = ep["underdog_team_abbr"]
-
-        # Determine opponent from matchup
-        abbr_title = ud_game.get("abbreviated_title", "")  # e.g., "PHX @ LAL"
-        opponent_team = ""
-        if " @ " in abbr_title:
-            away, home = abbr_title.split(" @ ")
-            if player_team == away:
-                opponent_team = home
-            elif player_team == home:
-                opponent_team = away
-            else:
-                # Fallback: just use the other team
-                opponent_team = home if player_team != home else away
-
-        game_time_utc = None
-        if ud_game.get("scheduled_at"):
-            try:
-                game_dt = datetime.datetime.fromisoformat(
-                    ud_game["scheduled_at"].replace('Z', '+00:00'))
-                game_time_utc = game_dt.isoformat()
-            except:
-                pass
-
-        priority_stats = ["Points", "Rebounds", "Assists",
-                          "3-Pointers Made", "Pts + Rebs + Asts"]
-        for prop in ud_props:
-            stat_name = prop.get("stat_name", "")
-            if stat_name not in priority_stats:
-                continue
-
-            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
-                prop, player_averages, game_time_utc
-            )
-
-            all_props_for_ranking.append({
-                "player_name": ep["name"],
-                "player_team": player_team,
-                "opponent_team": opponent_team,
-                "position": nba_stats.get("position", ud_player.get("position_name", "N/A")),
-                "stat_name": stat_name,
-                "line": prop.get("line", 0),
-                "player_avg": player_avg,
-                "ranking_score": prop_score,
-                "averages": player_averages
-            })
-
-    # Sort by ranking score and take top 20 for AI analysis
-    all_props_for_ranking.sort(key=lambda x: x["ranking_score"], reverse=True)
-    top_props_for_ai = all_props_for_ranking[:20]
-
-    if google_api_key and len(top_props_for_ai) > 0:
-        try:
-            # Build prop-specific summaries
-            prop_summaries = []
-            for prop_data in top_props_for_ai:
-                # Get the relevant average for this stat
-                stat_lower = prop_data["stat_name"].lower()
-                relevant_avg = prop_data["player_avg"]
-                avg_label = "average"
-
-                if "point" in stat_lower:
-                    avg_label = "pts avg"
-                elif "rebound" in stat_lower:
-                    avg_label = "reb avg"
-                elif "assist" in stat_lower:
-                    avg_label = "ast avg"
-                elif "3-pointer" in stat_lower:
-                    avg_label = "3PM avg"
-                elif "pts + rebs + asts" in stat_lower:
-                    avg_label = "PRA avg"
-
-                prop_summaries.append({
-                    "player": prop_data["player_name"],
-                    "team": prop_data["player_team"],
-                    "opponent": prop_data["opponent_team"],
-                    "position": prop_data["position"],
-                    "stat": prop_data["stat_name"],
-                    "line": prop_data["line"],
-                    f"{avg_label}": relevant_avg
-                })
-
-            client = genai.Client(api_key=google_api_key)
-            prompt = f"""You are an expert NBA handicapper providing prop bet analysis.
-
-**CRITICAL CONTEXT:**
-- Each prop shows which TEAM the player plays FOR and which team they play AGAINST (opponent).
-- The player is ON the "team" field, playing AGAINST the "opponent" field.
-- Example: If team="PHX" and opponent="LAL", the player plays FOR Phoenix AGAINST the Lakers.
-
-**PROPS TO ANALYZE:** {len(prop_summaries)}
-
-**DATA:**
-{json.dumps(prop_summaries, indent=2)}
-
-**ANALYSIS GUIDELINES - FOCUS ON MATCHUP FACTORS:**
-- DO NOT just say "player averages X which is higher than the line" - that's not insightful
-- FOCUS ON these matchup-specific factors:
-  * Opponent's defensive rating and how they defend this position/stat
-  * Opponent's pace of play (fast pace = more possessions = more stats)
-  * Opponent's weaknesses (e.g., "LAL allows 4th most rebounds to centers")
-  * Recent injury news affecting opponent's defense
-  * Back-to-back or fatigue factors
-  * Home/away splits if relevant
-- Be specific about WHY the matchup favors Over or Under
-
-**FOR EACH PROP PROVIDE:**
-1. "player": The player's name (must match exactly)
-2. "stat": The stat type (must match exactly: "Points", "Rebounds", "Assists", "3-Pointers Made", or "Pts + Rebs + Asts")
-3. "trending": "hot" (strong edge based on matchup) or "up" (standard play)
-4. "analysis": 1-2 sentences focusing on MATCHUP FACTORS, not just averages. Why does this specific opponent make Over/Under favorable?
-5. "direction": "Over" or "Under" recommendation
-
-**OUTPUT FORMAT (VALID JSON):**
-{{
-    "props": [
-        {{
-            "player": "Cooper Flagg",
-            "stat": "Points",
-            "trending": "hot",
-            "analysis": "LAL ranks 28th in perimeter defense and plays at the 5th fastest pace. High-volume scoring opportunity.",
-            "direction": "Over"
-        }},
-        {{
-            "player": "Cooper Flagg",
-            "stat": "Rebounds",
-            "trending": "up",
-            "analysis": "LAL allows the 3rd most rebounds to forwards this season. Favorable glass matchup.",
-            "direction": "Over"
-        }}
-    ]
-}}
-"""
-
-            response = client.models.generate_content(
-                model="gemini-3-pro",
-                contents=prompt,
-                config={"response_mime_type": "application/json",
-                        "temperature": 0.3}
-            )
-            ai_results = json.loads(response.text)
-            print("✓ Gemini per-prop analysis complete")
-
-            for p in ai_results.get("props", []):
-                # Create unique key: playername_stat
-                key = f"{p['player'].lower()}_{p['stat'].lower()}"
-                ai_by_prop[key] = {
-                    "trending": p.get("trending", "up"),
-                    "analysis": p.get("analysis", ""),
-                    "direction": p.get("direction", "")
-                }
-        except Exception as e:
-            print(f"Gemini error (continuing without AI): {e}")
-
-    # 6. Build individual prop cards (one document per prop)
+    # 5. Build individual prop cards (one document per prop)
+    # We build these FIRST before AI analysis so data is saved even if Gemini times out
     print("📊 Building individual prop cards...")
     all_prop_cards = []
 
@@ -879,8 +748,6 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 game_time_utc = game_dt.isoformat()
             except:
                 pass
-
-        # AI analysis is now per-prop, handled below in the prop loop
 
         # Create individual prop cards for priority stats only
         priority_stats = ["Points", "Rebounds", "Assists",
@@ -972,7 +839,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 
     print(f"📊 Created {len(all_prop_cards)} individual prop cards")
 
-    # 7. Sort and categorize props
+    # 6. Sort and categorize props
     # Sort by ranking score (highest first)
     all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
 
@@ -981,19 +848,6 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     for i, card in enumerate(all_prop_cards[:for_you_count]):
         card["section"] = "forYou"
         card["featured"] = True
-
-        # Add AI analysis for this specific prop (per-prop lookup)
-        prop_key = f"{card['name'].lower()}_{card['statNameFull'].lower()}"
-        prop_ai = ai_by_prop.get(prop_key, {})
-
-        card["trending"] = prop_ai.get("trending", "up")
-        if card["trending"] not in ["up", "hot"]:
-            card["trending"] = "up"
-        card["ai_analysis"] = prop_ai.get("analysis", "")
-
-        # Add AI recommendation direction for this prop
-        if prop_ai.get("direction"):
-            card["aiRecommended"] = prop_ai.get("direction")
 
     # "topPicks" section: props 6-20 (next best after forYou)
     top_picks_start = for_you_count
@@ -1004,19 +858,6 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         card["section"] = "topPicks"
         card["featured"] = True
 
-        # Add AI analysis for this specific prop (per-prop lookup)
-        prop_key = f"{card['name'].lower()}_{card['statNameFull'].lower()}"
-        prop_ai = ai_by_prop.get(prop_key, {})
-
-        card["trending"] = prop_ai.get("trending", "up")
-        if card["trending"] not in ["up", "hot"]:
-            card["trending"] = "up"
-        card["ai_analysis"] = prop_ai.get("analysis", "")
-
-        # Add AI recommendation direction for this prop
-        if prop_ai.get("direction"):
-            card["aiRecommended"] = prop_ai.get("direction")
-
     # Mark remaining cards as allProps
     for card in all_prop_cards[top_picks_end:]:
         card["section"] = "allProps"
@@ -1025,7 +866,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     print(
         f"✓ Categorized: {for_you_count} forYou (top 5), {top_picks_count} topPicks")
 
-    # 8. Clear old props and write to Firestore
+    # 7. Clear old props and write to Firestore FIRST (before AI analysis)
+    # This ensures all data is saved even if Gemini times out
     db = firestore.client()
 
     print("🗑️  Clearing old props collection...")
@@ -1067,7 +909,142 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         batch.commit()
 
     print(f"\n{'='*60}")
-    print(f"=== COMPLETE: Wrote {written_count} prop cards to Firestore ===")
+    print(f"=== DATA SAVED: Wrote {written_count} prop cards to Firestore ===")
+    print("="*60 + "\n")
+
+    # 8. NOW run Gemini AI analysis on top 10 props
+    # This happens AFTER data is saved, so even if it times out, props are preserved
+    # Using gemini-2.5-pro for reliability. Change to "gemini-2.5-pro-preview-05-06" for latest.
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    ai_updated_count = 0
+
+    if google_api_key:
+        try:
+            print("🤖 Running Gemini 2.5 Pro analysis on top 10 props...")
+
+            # Get top 10 props for AI analysis
+            top_10_cards = all_prop_cards[:10]
+
+            # Build summaries for Gemini
+            prop_summaries = []
+            for card in top_10_cards:
+                prop_summaries.append({
+                    "player": card["name"],
+                    "team": card["teamAbbr"],
+                    "opponent": card["opponent"],
+                    "stat": card["statNameFull"],
+                    "line": card["line"],
+                    "player_avg": card["playerAverage"]
+                })
+
+            client = genai.Client(api_key=google_api_key)
+            prompt = f"""You are an expert NBA handicapper providing prop bet analysis.
+
+**CRITICAL CONTEXT:**
+- Each prop shows which TEAM the player plays FOR and which team they play AGAINST (opponent).
+- The player is ON the "team" field, playing AGAINST the "opponent" field.
+
+**PROPS TO ANALYZE:** {len(prop_summaries)}
+
+**DATA:**
+{json.dumps(prop_summaries, indent=2)}
+
+**ANALYSIS GUIDELINES - FOCUS ON MATCHUP FACTORS:**
+- DO NOT just say "player averages X which is higher than the line" - that's not insightful
+- FOCUS ON matchup-specific factors:
+  * Opponent's defensive rating and how they defend this position/stat
+  * Opponent's pace of play (fast pace = more possessions = more stats)
+  * Opponent's weaknesses (e.g., "LAL allows 4th most rebounds to centers")
+- Be specific about WHY the matchup favors Over or Under
+
+**FOR EACH PROP PROVIDE:**
+1. "player": The player's name (must match exactly)
+2. "stat": The stat type (must match exactly: "Points", "Rebounds", "Assists", "3-Pointers Made", or "Pts + Rebs + Asts")
+3. "trending": "hot" (strong edge based on matchup) or "up" (standard play)
+4. "analysis": 1-2 sentences focusing on MATCHUP FACTORS, not just averages
+5. "direction": "Over" or "Under" recommendation
+
+**OUTPUT FORMAT (VALID JSON):**
+{{
+    "props": [
+        {{
+            "player": "Player Name",
+            "stat": "Points",
+            "trending": "hot",
+            "analysis": "Matchup analysis here.",
+            "direction": "Over"
+        }}
+    ]
+}}"""
+
+            response = client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=prompt,
+                config={"response_mime_type": "application/json",
+                        "temperature": 0.3}
+            )
+            ai_results = json.loads(response.text)
+            ai_props = ai_results.get("props", [])
+            print(
+                f"✓ Gemini analysis complete - received {len(ai_props)} analyses")
+
+            # Helper to normalize stat names for flexible matching
+            def normalize_stat(stat: str) -> str:
+                stat = stat.lower().strip()
+                if stat in ["pts", "points", "point"]:
+                    return "points"
+                if stat in ["reb", "rebs", "rebounds", "rebound"]:
+                    return "rebounds"
+                if stat in ["ast", "asts", "assists", "assist"]:
+                    return "assists"
+                if stat in ["3pm", "3-pointers made", "3-pointers", "threes", "3 pointers made"]:
+                    return "3-pointers made"
+                if stat in ["pra", "pts + rebs + asts", "points + rebounds + assists"]:
+                    return "pts + rebs + asts"
+                return stat
+
+            # Update the top props in Firestore with AI analysis
+            for p in ai_props:
+                player_name = p.get("player", "").lower().strip()
+                stat_name = normalize_stat(p.get("stat", ""))
+                analysis = p.get("analysis", "")
+
+                # Find matching card and update in Firestore
+                matched = False
+                for card in top_10_cards:
+                    card_player = card["name"].lower().strip()
+                    card_stat = normalize_stat(card["statNameFull"])
+
+                    if card_player == player_name and card_stat == stat_name:
+                        doc_id = card["id"]
+                        update_data = {
+                            "trending": p.get("trending", "up") if p.get("trending") in ["up", "hot"] else "up",
+                            "ai_analysis": analysis,
+                        }
+                        if p.get("direction"):
+                            update_data["aiRecommended"] = p.get("direction")
+
+                        db.collection("props").document(
+                            doc_id).update(update_data)
+                        ai_updated_count += 1
+                        matched = True
+                        print(
+                            f"  ✓ Updated: {card['name']} - {card['statNameFull']}")
+                        break
+
+                if not matched:
+                    print(
+                        f"  ✗ No match: {player_name} / {p.get('stat', 'unknown')}")
+
+            print(
+                f"✓ AI analysis matched {ai_updated_count}/{len(ai_props)} props")
+
+        except Exception as e:
+            print(f"⚠️ Gemini error (props already saved without AI): {e}")
+
+    print(f"\n{'='*60}")
+    print(
+        f"=== COMPLETE: {written_count} props, {ai_updated_count} with AI ===")
     print(f"=== Top Picks: {top_picks_count}, For You: {for_you_count} ===")
     print("="*60 + "\n")
 
@@ -1077,6 +1054,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         "props_written": written_count,
         "top_picks": top_picks_count,
         "for_you": for_you_count,
+        "ai_analyzed": ai_updated_count,
         "source": "underdog_fantasy",
         "espn_games_today": len(espn_games)
     }), mimetype='application/json')
