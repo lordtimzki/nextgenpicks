@@ -79,6 +79,7 @@ def get_underdog_nba_props() -> dict:
     games_by_id = {g["id"]: g for g in games}
 
     # Build team_id -> abbreviation mapping from games
+    # Use string keys to avoid type mismatches
     team_id_to_abbr = {}
     for game in games:
         abbr_title = game.get("abbreviated_title", "")
@@ -87,9 +88,9 @@ def get_underdog_nba_props() -> dict:
             away_team_id = game.get("away_team_id")
             home_team_id = game.get("home_team_id")
             if away_team_id:
-                team_id_to_abbr[away_team_id] = away_abbr
+                team_id_to_abbr[str(away_team_id)] = away_abbr
             if home_team_id:
-                team_id_to_abbr[home_team_id] = home_abbr
+                team_id_to_abbr[str(home_team_id)] = home_abbr
 
     # Group lines by player
     # player_id -> {player_info, props: [...], game_info}
@@ -250,9 +251,9 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
             away_team_id = ud_game.get("away_team_id")
             home_team_id = ud_game.get("home_team_id")
             if away_team_id:
-                team_id_to_abbr[away_team_id] = away_abbr
+                team_id_to_abbr[str(away_team_id)] = away_abbr
             if home_team_id:
-                team_id_to_abbr[home_team_id] = home_abbr
+                team_id_to_abbr[str(home_team_id)] = home_abbr
 
     for player_data in underdog_data["players"]:
         player = player_data["player"]
@@ -270,7 +271,16 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
         image_url = player.get("image_url", "")
 
         # Determine team abbreviation from team_id mapping
-        team_abbr = team_id_to_abbr.get(player_team_id, "UNK")
+        team_abbr = team_id_to_abbr.get(str(player_team_id), "")
+
+        # If team_abbr not found, try to extract from game's abbreviated_title
+        if not team_abbr and ud_game:
+            abbr_title = ud_game.get("abbreviated_title", "")
+            if " @ " in abbr_title:
+                away, home = abbr_title.split(" @ ")
+                # Use away team as fallback (better than nothing)
+                team_abbr = away
+
         opponent = "TBD"
         game_time = "Tonight"
         game_time_utc = None  # ISO timestamp for client-side local time conversion
@@ -287,18 +297,10 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
                 except:
                     pass
 
-            # Get abbreviated title like "NOP @ CHA"
+            # Get abbreviated title like "NOP @ CHA" - show full matchup
             abbr_title = ud_game.get("abbreviated_title", "")
-            if " @ " in abbr_title:
-                away, home = abbr_title.split(" @ ")
-                # Determine opponent based on player's team
-                if team_abbr == away:
-                    opponent = f"@ {home}"
-                elif team_abbr == home:
-                    opponent = f"vs {away}"
-                else:
-                    # Fallback: show both teams
-                    opponent = abbr_title
+            if abbr_title:
+                opponent = abbr_title  # e.g., "LAL @ BKN"
 
         # Format props for iOS
         ios_props = []

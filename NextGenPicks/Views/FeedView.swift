@@ -27,14 +27,51 @@ struct FeedView: View {
                                     .font(.largeTitle)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
-                                Text("Trending player props for today")
+                                Text("Today's player props")
                                     .font(.subheadline)
                                     .foregroundStyle(.gray)
                             }
                             .padding(.horizontal)
                             .padding(.top, 10)
                             
-                            // 2. Quick Stats Row
+                            // 2. For You Section (top 5 picks for parlay builders)
+                            if !vm.forYouProps.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("For You")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+
+                                        Spacer()
+
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "star.fill")
+                                                .font(.caption)
+                                            Text("Top 5 Legs")
+                                                .font(.caption)
+                                        }
+                                        .foregroundStyle(Color.brandOrange)
+                                    }
+                                    .padding(.horizontal)
+
+                                    LazyVGrid(columns: columns, spacing: 12) {
+                                        ForEach(Array(vm.forYouProps.prefix(5))) { prop in
+                                            PlayerPropCard(player: prop)
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+
+                                // Separator line
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 1)
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 8)
+                            }
+
+                            // 3. Quick Stats Row
                             HStack(spacing: 12) {
                                 QuickStatCard(
                                     title: "Hot Props",
@@ -49,25 +86,25 @@ struct FeedView: View {
                                     color: .brandBlue
                                 )
                                 QuickStatCard(
-                                    title: "Trending",
-                                    value: "\(vm.featuredProps.filter({ $0.trending == .up }).count)",
-                                    iconName: "chart.line.uptrend.xyaxis",
+                                    title: "Total Props",
+                                    value: "\(vm.featuredProps.count)",
+                                    iconName: "list.bullet",
                                     color: .brandPurple
                                 )
                             }
                             .padding(.horizontal)
-                            
-                            // 3. Featured Props Grid
+
+                            // 4. Top Picks Section (highest ranked props)
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Featured Props")
+                                Text("Top Picks")
                                     .font(.title3)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal)
-                                
+
                                 LazyVGrid(columns: columns, spacing: 12) {
-                                    ForEach(vm.featuredProps) { player in
-                                        PlayerPropCard(player: player)
+                                    ForEach(vm.featuredProps) { prop in
+                                        PlayerPropCard(player: prop)
                                     }
                                 }
                                 .padding(.horizontal)
