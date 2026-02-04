@@ -21,6 +21,300 @@ from retrieve import get_all_team_defense_stats
 
 
 # ============================================================
+# INJURY & REST DAY FUNCTIONS
+# ============================================================
+
+def get_nba_injuries() -> dict:
+    """
+    Fetch current NBA injuries from ESPN.
+    Returns dict mapping team abbreviation to list of injured players.
+    """
+    print("\n🏥 Fetching NBA injury report...")
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(
+                "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if resp.status_code != 200:
+                print(f"  ⚠️ Injury API returned {resp.status_code}")
+                return {}
+
+            data = resp.json()
+    except Exception as e:
+        print(f"  ⚠️ Failed to fetch injuries: {e}")
+        return {}
+
+    # ESPN abbreviation mapping (ESPN uses some different abbrevs)
+    espn_to_standard = {
+        "GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
+        "UTAH": "UTA", "PHX": "PHO", "WSH": "WAS"
+    }
+
+    injuries_by_team = {}
+
+    for team_data in data.get("injuries", []):
+        team_info = team_data.get("team", {})
+        team_abbr = team_info.get("abbreviation", "")
+        team_abbr = espn_to_standard.get(team_abbr, team_abbr)
+
+        team_injuries = []
+        for injury in team_data.get("injuries", []):
+            athlete = injury.get("athlete", {})
+            player_name = athlete.get("displayName", "")
+            status = injury.get("status", "")  # Out, Day-To-Day, Questionable
+            injury_type = injury.get("type", {}).get("description", "")
+
+            if player_name and status:
+                team_injuries.append({
+                    "name": player_name,
+                    "status": status,
+                    "injury": injury_type,
+                })
+
+        if team_injuries:
+            injuries_by_team[team_abbr] = team_injuries
+
+    total_injured = sum(len(v) for v in injuries_by_team.values())
+    print(
+        f"  ✓ Found {total_injured} injured players across {len(injuries_by_team)} teams")
+
+    return injuries_by_team
+
+
+def get_yesterdays_games() -> dict:
+    """
+    Fetch yesterday's NBA games to detect back-to-backs.
+    Returns dict mapping team abbreviation to game info if they played.
+    """
+    print("\n📅 Checking for back-to-back games...")
+
+    yesterday = datetime.datetime.now(
+        timezone.utc) - datetime.timedelta(days=1)
+    date_str = yesterday.strftime("%Y%m%d")
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(
+                f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates={date_str}",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if resp.status_code != 200:
+                print(f"  ⚠️ Schedule API returned {resp.status_code}")
+                return {}
+
+            data = resp.json()
+    except Exception as e:
+        print(f"  ⚠️ Failed to fetch yesterday's games: {e}")
+        return {}
+
+    espn_to_standard = {
+        "GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
+        "UTAH": "UTA", "PHX": "PHO", "WSH": "WAS"
+    }
+
+    teams_played_yesterday = {}
+
+    for event in data.get("events", []):
+        competition = event.get("competitions", [{}])[0]
+        competitors = competition.get("competitors", [])
+
+        for team in competitors:
+            team_info = team.get("team", {})
+            abbr = team_info.get("abbreviation", "")
+            abbr = espn_to_standard.get(abbr, abbr)
+
+            # Get minutes played by key players if available
+            teams_played_yesterday[abbr] = {
+                "played_yesterday": True,
+                "opponent": "",
+                "result": ""
+            }
+
+            # Try to get opponent
+            other_team = next((t for t in competitors if t != team), None)
+            if other_team:
+                opp_abbr = other_team.get("team", {}).get("abbreviation", "")
+                teams_played_yesterday[abbr]["opponent"] = espn_to_standard.get(
+                    opp_abbr, opp_abbr)
+
+            # Get result
+            score = team.get("score", "0")
+            winner = team.get("winner", False)
+            teams_played_yesterday[abbr]["result"] = "W" if winner else "L"
+
+    print(
+        f"  ✓ {len(teams_played_yesterday)} teams played yesterday (back-to-back)")
+
+    return teams_played_yesterday
+
+
+def get_todays_lineups() -> dict:
+    """
+    Fetch today's NBA lineups/starters from ESPN.
+    Returns dict mapping player name to lineup status.
+    ESPN provides projected starters closer to game time.
+    """
+    print("\n📋 Fetching lineup confirmations...")
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            # Get today's scoreboard with lineup info
+            resp = client.get(
+                "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if resp.status_code != 200:
+                print(f"  ⚠️ Scoreboard API returned {resp.status_code}")
+                return {}
+
+            data = resp.json()
+    except Exception as e:
+        print(f"  ⚠️ Failed to fetch lineups: {e}")
+        return {}
+
+    espn_to_standard = {
+        "GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
+        "UTAH": "UTA", "PHX": "PHO", "WSH": "WAS"
+    }
+
+    lineup_info = {}  # player_name -> {status, team, is_starter}
+
+    for event in data.get("events", []):
+        competition = event.get("competitions", [{}])[0]
+        competitors = competition.get("competitors", [])
+        game_status = event.get("status", {}).get("type", {}).get("name", "")
+
+        for team_data in competitors:
+            team_info = team_data.get("team", {})
+            team_abbr = team_info.get("abbreviation", "")
+            team_abbr = espn_to_standard.get(team_abbr, team_abbr)
+
+            # Get roster/lineup info if available
+            roster = team_data.get("roster", [])
+            for player in roster:
+                player_name = player.get("displayName", "")
+                if not player_name:
+                    continue
+
+                # Check if player is starter
+                is_starter = player.get("starter", False)
+                player_status = player.get("status", {}).get("type", "active")
+
+                lineup_info[player_name.lower()] = {
+                    "team": team_abbr,
+                    "is_starter": is_starter,
+                    "status": player_status,
+                    "game_status": game_status,  # scheduled, in_progress, final
+                }
+
+            # Also check probables/lineups from competition data
+            probables = competition.get("probables", [])
+            for probable in probables:
+                player_name = probable.get(
+                    "athlete", {}).get("displayName", "")
+                if player_name:
+                    lineup_info[player_name.lower()] = {
+                        "team": team_abbr,
+                        "is_starter": True,
+                        "status": "confirmed",
+                        "game_status": game_status,
+                    }
+
+    confirmed_starters = sum(
+        1 for v in lineup_info.values() if v.get("is_starter"))
+    print(
+        f"  ✓ Found lineup data for {len(lineup_info)} players ({confirmed_starters} confirmed starters)")
+
+    return lineup_info
+
+
+def get_player_lineup_status(player_name: str, lineup_cache: dict, injuries_cache: dict, team_abbr: str) -> str:
+    """
+    Get lineup status for a player.
+    Returns: "STARTING", "DNP RISK", "QUESTIONABLE", or ""
+    """
+    player_key = player_name.lower()
+
+    # Check lineup cache first
+    if player_key in lineup_cache:
+        info = lineup_cache[player_key]
+        if info.get("is_starter"):
+            return "STARTING"
+        if info.get("status") == "inactive":
+            return "OUT"
+
+    # Check injury list
+    team_injuries = injuries_cache.get(team_abbr, [])
+    for injury in team_injuries:
+        if injury.get("name", "").lower() == player_key:
+            status = injury.get("status", "").lower()
+            if "out" in status:
+                return "OUT"
+            elif "questionable" in status or "doubtful" in status:
+                return "GTD"
+            elif "day" in status:
+                return "GTD"
+
+    return ""
+
+
+def get_team_injuries_summary(team_abbr: str, injuries_by_team: dict) -> str:
+    """
+    Get a summary of key injuries for a team.
+    Returns string like "OUT: LeBron James, Anthony Davis (DTD)" or empty string.
+    """
+    if not team_abbr or team_abbr not in injuries_by_team:
+        return ""
+
+    injuries = injuries_by_team.get(team_abbr, [])
+    if not injuries:
+        return ""
+
+    out_players = []
+    dtd_players = []
+
+    for inj in injuries:
+        name = inj.get("name", "")
+        status = inj.get("status", "").lower()
+
+        # Shorten name to "F. Last" format
+        name_parts = name.split()
+        if len(name_parts) >= 2:
+            short_name = f"{name_parts[0][0]}. {name_parts[-1]}"
+        else:
+            short_name = name
+
+        if "out" in status:
+            out_players.append(short_name)
+        elif "day" in status or "questionable" in status:
+            dtd_players.append(short_name)
+
+    parts = []
+    if out_players:
+        parts.append(f"OUT: {', '.join(out_players[:3])}")  # Max 3
+    if dtd_players:
+        parts.append(f"GTD: {', '.join(dtd_players[:2])}")  # Max 2
+
+    return " | ".join(parts) if parts else ""
+
+
+def get_player_rest_status(team_abbr: str, teams_played_yesterday: dict) -> str:
+    """
+    Get rest status for a player's team.
+    Returns "B2B" for back-to-back, "Rested" for 2+ days rest, or empty string.
+    """
+    if not team_abbr:
+        return ""
+
+    if team_abbr in teams_played_yesterday:
+        return "B2B"
+
+    return ""
+
+
+# ============================================================
 # RANKING SYSTEM FUNCTIONS
 # ============================================================
 
@@ -641,6 +935,11 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     team_defense_cache = get_all_team_defense_stats()
     print(f"✓ Cached defense stats for {len(team_defense_cache)} teams")
 
+    # 2.6. Fetch injury reports, back-to-back info, and lineup confirmations
+    injuries_cache = get_nba_injuries()
+    b2b_cache = get_yesterdays_games()
+    lineup_cache = get_todays_lineups()
+
     print(
         f"\nProcessing {len(underdog_data['players'])} players with props...\n")
 
@@ -842,6 +1141,14 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         if nba_stats:
             last5_games = nba_stats.get("last5Games", [])
 
+        # Get injury and rest data for this player's team and opponent
+        opponent_abbr = get_opponent_abbrev(opponent, team_abbr)
+        team_injuries = get_team_injuries_summary(team_abbr, injuries_cache)
+        opp_injuries = get_team_injuries_summary(opponent_abbr, injuries_cache)
+        rest_status = get_player_rest_status(team_abbr, b2b_cache)
+        lineup_status = get_player_lineup_status(
+            player_name, lineup_cache, injuries_cache, team_abbr)
+
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
             # Only include priority stats for cleaner feed
@@ -916,7 +1223,13 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     "reb": player_averages.get("reb", 0),
                     "ast": player_averages.get("ast", 0),
                     "fg3m": player_averages.get("fg3m", 0)
-                }
+                },
+                # Injury and rest data
+                "restStatus": rest_status,  # "B2B" or ""
+                "teamInjuries": team_injuries,  # "OUT: J. Embiid | GTD: T. Maxey"
+                "oppInjuries": opp_injuries,
+                "opponentAbbr": opponent_abbr,
+                "lineupStatus": lineup_status,  # "STARTING", "GTD", "OUT", or ""
             }
 
             all_prop_cards.append(prop_card)
@@ -1004,7 +1317,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 
     if google_api_key:
         try:
-            print("🤖 Running Gemini 2.5 Pro analysis on top 6 props with matchup data...")
+            print("🤖 Running Gemini 2.0 Flash analysis with grounding on top 6 props...")
 
             # Get top 6 props for AI analysis (reduced from 10 for quality)
             top_6_cards = all_prop_cards[:6]
@@ -1028,53 +1341,87 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     "team": player_team,
                     "stat": card["statNameFull"],
                     "line": card["line"],
-                    # Pre-calculated direction (AI must explain this, not change it)
-                    "direction": card.get("recommendedDirection", "Over"),
-                    # Player trends
                     "player_avg": card["playerAverage"],
+                    "edge_pct": round(((card["playerAverage"] - card["line"]) / card["line"]) * 100, 1) if card["line"] > 0 else 0,
                     "hit_rate": f"{card['hitRate']['hits']}/{card['hitRate']['total']}",
-                    # Opponent matchup data
                     "opponent": opponent_abbrev if opponent_abbrev else matchup_str,
-                    "opp_def_rating": opp_stats.get("def_rating"),
                     "opp_def_rank": opp_stats.get("def_rank"),
-                    "opp_pace": opp_stats.get("pace"),
                     "opp_pace_rank": opp_stats.get("pace_rank"),
+                    # Injury and rest data
+                    "rest_status": card.get("restStatus", ""),
+                    "team_injuries": card.get("teamInjuries", ""),
+                    "opp_injuries": card.get("oppInjuries", ""),
+                    "lineup_status": card.get("lineupStatus", ""),
                 }
                 prop_summaries.append(summary)
 
             client = genai.Client(api_key=google_api_key)
-            prompt = f"""You are an expert NBA handicapper. Explain why each pre-determined recommendation makes sense.
+            prompt = f"""You are an elite NBA handicapper with access to real-time search. Analyze each prop using the DECISION FRAMEWORK below.
 
-**PROP DATA (direction already determined by statistical edge):**
+If any player has lineup_status = "GTD" or critical injury info is missing, use Google Search to check their latest status before making your recommendation.
+
+**PROP DATA:**
 {json.dumps(prop_summaries, indent=2)}
 
-**KEY METRICS EXPLAINED:**
-- direction: Pre-calculated recommendation based on player_avg vs line (DO NOT CHANGE THIS)
-- opp_def_rank: 1 = best defense (hardest matchup), 30 = worst defense (easiest matchup)
-- opp_pace_rank: 1 = fastest pace (more possessions = more counting stats), 30 = slowest pace
-- hit_rate: How many of last 5 games the player exceeded this line (e.g., "4/5" = hit 4 of 5)
+**METRICS REFERENCE:**
+- edge_pct: How much player_avg exceeds line (positive = over edge, negative = under edge)
+- hit_rate: Games over line in last 5 (e.g., "4/5" = hit 4 times)
+- opp_def_rank: 1-30 (1=best defense/hardest, 30=worst defense/easiest)
+- opp_pace_rank: 1-30 (1=fastest pace/more possessions, 30=slowest)
+- rest_status: "B2B" = back-to-back game (fatigue risk), "" = normal rest
+- lineup_status: "STARTING" = confirmed starter, "GTD" = game-time decision, "OUT" = ruled out
+- team_injuries: Key injuries on player's team (may increase usage if star out)
+- opp_injuries: Key injuries on opponent (defensive anchor out = easier matchup)
 
-**YOUR TASK:**
-Explain WHY the given direction is supported by matchup data. Focus on factors that reinforce the recommendation.
-If matchup data contradicts the direction, briefly acknowledge it but emphasize the statistical edge from player average.
+**DECISION FRAMEWORK - Apply these rules strictly:**
+
+OVER signals:
+- edge_pct > 10% = Strong over indicator
+- hit_rate 4/5 or 5/5 = Strong recent form
+- opp_def_rank 20-30 = Weak defense (boost scoring/counting stats)
+- opp_pace_rank 1-10 = Fast pace (more possessions = more stats)
+- opp_injuries contains key defender OUT = easier matchup
+- team_injuries shows teammate OUT = potential increased usage
+- lineup_status = "STARTING" = confirmed to play
+
+UNDER signals:
+- edge_pct < -10% = Strong under indicator
+- hit_rate 0/5 or 1/5 = Poor recent form
+- opp_def_rank 1-10 = Elite defense (suppresses stats)
+- opp_pace_rank 20-30 = Slow pace (fewer possessions)
+- rest_status = "B2B" = fatigue factor (especially for older players or high-minute guys)
+
+CAUTION signals:
+- lineup_status = "GTD" = risky, check latest news
+- lineup_status = "OUT" = skip this prop entirely
+
+CONFIDENCE LEVELS:
+- "Strong": 3+ signals align in same direction AND player confirmed to play
+- "Lean": 2 signals align, or edge_pct > 15%
+- "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain
 
 **OUTPUT (JSON):**
 {{
     "props": [
         {{
-            "player": "Exact Name",
+            "player": "Exact Player Name",
             "stat": "Points|Rebounds|Assists|3-Pointers Made|Pts + Rebs + Asts",
-            "trending": "hot" or "up",
-            "analysis": "• DEF: [opponent] ranks #X in defense. • PACE: [opponent] plays at #X pace. • FORM: Hit X/5 recent games. [1 sentence supporting the recommendation]"
+            "direction": "Over" or "Under",
+            "confidence": "Strong" or "Lean" or "Fade",
+            "analysis": "[2-3 sentences citing specific numbers. Mention lineup status and injuries if relevant. End with clear verdict.]"
         }}
     ]
 }}"""
 
+            # Use Gemini 2.0 Flash with grounding for real-time search capability
             response = client.models.generate_content(
                 model="gemini-2.5-pro",
                 contents=prompt,
-                config={"response_mime_type": "application/json",
-                        "temperature": 0}
+                config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0,
+                    "tools": [{"google_search": {}}],
+                }
             )
             ai_results = json.loads(response.text)
             ai_props = ai_results.get("props", [])
@@ -1110,13 +1457,17 @@ If matchup data contradicts the direction, briefly acknowledge it but emphasize 
 
                     if card_player == player_name and card_stat == stat_name:
                         doc_id = card["id"]
-                        # Use our data-driven direction, not AI's
-                        calculated_direction = card.get(
-                            "recommendedDirection", "Over")
+                        ai_direction = p.get("direction", "Over")
+                        ai_confidence = p.get("confidence", "Lean")
+
+                        # Map confidence to trending
+                        trending = "hot" if ai_confidence == "Strong" else "up"
+
                         update_data = {
-                            "trending": p.get("trending", "up") if p.get("trending") in ["up", "hot"] else "up",
+                            "trending": trending,
                             "ai_analysis": analysis,
-                            "aiRecommended": calculated_direction,
+                            "aiRecommended": ai_direction,
+                            "aiConfidence": ai_confidence,
                         }
 
                         db.collection("props").document(
@@ -1124,7 +1475,7 @@ If matchup data contradicts the direction, briefly acknowledge it but emphasize 
                         ai_updated_count += 1
                         matched = True
                         print(
-                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({calculated_direction})")
+                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction})")
                         break
 
                 if not matched:
@@ -1188,6 +1539,11 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     print("\n📊 Fetching team defense stats for matchup analysis...")
     team_defense_cache = get_all_team_defense_stats()
     print(f"✓ Cached defense stats for {len(team_defense_cache)} teams")
+
+    # Fetch injury reports, back-to-back info, and lineup confirmations
+    injuries_cache = get_nba_injuries()
+    b2b_cache = get_yesterdays_games()
+    lineup_cache = get_todays_lineups()
 
     db = firestore.client()
 
@@ -1358,6 +1714,14 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         # Get last 5 games for hit rate
         last5_games = nba_stats.get("last5Games", []) if nba_stats else []
 
+        # Get injury and rest data for this player's team and opponent
+        opponent_abbr = get_opponent_abbrev(opponent, team_abbr)
+        team_injuries = get_team_injuries_summary(team_abbr, injuries_cache)
+        opp_injuries = get_team_injuries_summary(opponent_abbr, injuries_cache)
+        rest_status = get_player_rest_status(team_abbr, b2b_cache)
+        lineup_status = get_player_lineup_status(
+            player_name, lineup_cache, injuries_cache, team_abbr)
+
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
             if stat_name not in priority_stats:
@@ -1419,7 +1783,13 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                     "reb": player_averages.get("reb", 0),
                     "ast": player_averages.get("ast", 0),
                     "fg3m": player_averages.get("fg3m", 0)
-                }
+                },
+                # Injury and rest data
+                "restStatus": rest_status,
+                "teamInjuries": team_injuries,
+                "oppInjuries": opp_injuries,
+                "opponentAbbr": opponent_abbr,
+                "lineupStatus": lineup_status,
             }
             all_prop_cards.append(prop_card)
 
@@ -1469,7 +1839,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
 
     if google_api_key:
         try:
-            print("🤖 Running Gemini 2.5 Pro analysis on top 6 props...")
+            print("🤖 Running Gemini 2.0 Flash analysis with grounding on top 6 props...")
 
             top_6_cards = all_prop_cards[:6]
 
@@ -1485,50 +1855,87 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                     "team": player_team,
                     "stat": card["statNameFull"],
                     "line": card["line"],
-                    # Pre-calculated direction (AI must explain this, not change it)
-                    "direction": card.get("recommendedDirection", "Over"),
                     "player_avg": card["playerAverage"],
+                    "edge_pct": round(((card["playerAverage"] - card["line"]) / card["line"]) * 100, 1) if card["line"] > 0 else 0,
                     "hit_rate": f"{card['hitRate']['hits']}/{card['hitRate']['total']}",
                     "opponent": opponent_abbrev if opponent_abbrev else matchup_str,
-                    "opp_def_rating": opp_stats.get("def_rating"),
                     "opp_def_rank": opp_stats.get("def_rank"),
-                    "opp_pace": opp_stats.get("pace"),
                     "opp_pace_rank": opp_stats.get("pace_rank"),
+                    # Injury and rest data
+                    "rest_status": card.get("restStatus", ""),
+                    "team_injuries": card.get("teamInjuries", ""),
+                    "opp_injuries": card.get("oppInjuries", ""),
+                    "lineup_status": card.get("lineupStatus", ""),
                 }
                 prop_summaries.append(summary)
 
             client = genai.Client(api_key=google_api_key)
-            prompt = f"""You are an expert NBA handicapper. Explain why each pre-determined recommendation makes sense.
+            prompt = f"""You are an elite NBA handicapper with access to real-time search. Analyze each prop using the DECISION FRAMEWORK below.
 
-**PROP DATA (direction already determined by statistical edge):**
+If any player has lineup_status = "GTD" or critical injury info is missing, use Google Search to check their latest status before making your recommendation.
+
+**PROP DATA:**
 {json.dumps(prop_summaries, indent=2)}
 
-**KEY METRICS EXPLAINED:**
-- direction: Pre-calculated recommendation based on player_avg vs line (DO NOT CHANGE THIS)
-- opp_def_rank: 1 = best defense (hardest matchup), 30 = worst defense (easiest matchup)
-- opp_pace_rank: 1 = fastest pace (more possessions = more counting stats), 30 = slowest pace
-- hit_rate: How many of last 5 games the player exceeded this line (e.g., "4/5" = hit 4 of 5)
+**METRICS REFERENCE:**
+- edge_pct: How much player_avg exceeds line (positive = over edge, negative = under edge)
+- hit_rate: Games over line in last 5 (e.g., "4/5" = hit 4 times)
+- opp_def_rank: 1-30 (1=best defense/hardest, 30=worst defense/easiest)
+- opp_pace_rank: 1-30 (1=fastest pace/more possessions, 30=slowest)
+- rest_status: "B2B" = back-to-back game (fatigue risk), "" = normal rest
+- lineup_status: "STARTING" = confirmed starter, "GTD" = game-time decision, "OUT" = ruled out
+- team_injuries: Key injuries on player's team (may increase usage if star out)
+- opp_injuries: Key injuries on opponent (defensive anchor out = easier matchup)
 
-**YOUR TASK:**
-Explain WHY the given direction is supported by matchup data. Focus on factors that reinforce the recommendation.
-If matchup data contradicts the direction, briefly acknowledge it but emphasize the statistical edge from player average.
+**DECISION FRAMEWORK - Apply these rules strictly:**
+
+OVER signals:
+- edge_pct > 10% = Strong over indicator
+- hit_rate 4/5 or 5/5 = Strong recent form
+- opp_def_rank 20-30 = Weak defense (boost scoring/counting stats)
+- opp_pace_rank 1-10 = Fast pace (more possessions = more stats)
+- opp_injuries contains key defender OUT = easier matchup
+- team_injuries shows teammate OUT = potential increased usage
+- lineup_status = "STARTING" = confirmed to play
+
+UNDER signals:
+- edge_pct < -10% = Strong under indicator
+- hit_rate 0/5 or 1/5 = Poor recent form
+- opp_def_rank 1-10 = Elite defense (suppresses stats)
+- opp_pace_rank 20-30 = Slow pace (fewer possessions)
+- rest_status = "B2B" = fatigue factor (especially for older players or high-minute guys)
+
+CAUTION signals:
+- lineup_status = "GTD" = risky, check latest news
+- lineup_status = "OUT" = skip this prop entirely
+
+CONFIDENCE LEVELS:
+- "Strong": 3+ signals align in same direction AND player confirmed to play
+- "Lean": 2 signals align, or edge_pct > 15%
+- "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain
 
 **OUTPUT (JSON):**
 {{
     "props": [
         {{
-            "player": "Exact Name",
+            "player": "Exact Player Name",
             "stat": "Points|Rebounds|Assists|3-Pointers Made|Pts + Rebs + Asts",
-            "trending": "hot" or "up",
-            "analysis": "• DEF: [opponent] ranks #X in defense. • PACE: [opponent] plays at #X pace. • FORM: Hit X/5 recent games. [1 sentence supporting the recommendation]"
+            "direction": "Over" or "Under",
+            "confidence": "Strong" or "Lean" or "Fade",
+            "analysis": "[2-3 sentences citing specific numbers. Mention lineup status and injuries if relevant. End with clear verdict.]"
         }}
     ]
 }}"""
 
+            # Use Gemini 2.0 Flash with grounding for real-time search capability
             response = client.models.generate_content(
-                model="gemini-2.5-pro",
+                model="gemini-2.0-flash",
                 contents=prompt,
-                config={"response_mime_type": "application/json", "temperature": 0}
+                config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0,
+                    "tools": [{"google_search": {}}],
+                }
             )
             ai_results = json.loads(response.text)
             ai_props = ai_results.get("props", [])
@@ -1560,20 +1967,24 @@ If matchup data contradicts the direction, briefly acknowledge it but emphasize 
 
                     if card_player == player_name and card_stat == stat_name:
                         doc_id = card["id"]
-                        # Use our data-driven direction, not AI's
-                        calculated_direction = card.get(
-                            "recommendedDirection", "Over")
+                        ai_direction = p.get("direction", "Over")
+                        ai_confidence = p.get("confidence", "Lean")
+
+                        # Map confidence to trending
+                        trending = "hot" if ai_confidence == "Strong" else "up"
+
                         update_data = {
-                            "trending": p.get("trending", "up") if p.get("trending") in ["up", "hot"] else "up",
+                            "trending": trending,
                             "ai_analysis": analysis,
-                            "aiRecommended": calculated_direction,
+                            "aiRecommended": ai_direction,
+                            "aiConfidence": ai_confidence,
                         }
 
                         db.collection("props").document(
                             doc_id).update(update_data)
                         ai_updated_count += 1
                         print(
-                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({calculated_direction})")
+                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction})")
                         break
 
             print(
