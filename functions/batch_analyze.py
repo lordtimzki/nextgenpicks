@@ -117,8 +117,11 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
     edge = player_avg - line if player_avg > 0 else 0
     edge_score = min(10.0, max(0.0, (edge / 5.0) * 10.0))
 
-    # Determine recommendation: Over if player avg > line, Under otherwise
-    recommended_direction = "Over" if player_avg > line else "Under"
+    # Determine recommendation: Only if we have real player stats
+    # If player_avg is 0, we don't have data to make a recommendation
+    recommended_direction = None
+    if player_avg > 0:
+        recommended_direction = "Over" if player_avg > line else "Under"
 
     # 2. Star Power Score - based on total production
     total_production = averages.get(
