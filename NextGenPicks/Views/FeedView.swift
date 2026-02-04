@@ -27,7 +27,7 @@ struct FeedView: View {
                                     .font(.largeTitle)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
-                                Text("Trending player props for today")
+                                Text("Today's player props")
                                     .font(.subheadline)
                                     .foregroundStyle(.gray)
                             }
@@ -86,9 +86,9 @@ struct FeedView: View {
                                     color: .brandBlue
                                 )
                                 QuickStatCard(
-                                    title: "Trending",
-                                    value: "\(vm.featuredProps.filter({ $0.trending == .up }).count)",
-                                    iconName: "chart.line.uptrend.xyaxis",
+                                    title: "Total Props",
+                                    value: "\(vm.featuredProps.count)",
+                                    iconName: "list.bullet",
                                     color: .brandPurple
                                 )
                             }

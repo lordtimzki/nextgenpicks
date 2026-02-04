@@ -4,6 +4,7 @@ protocol DataService {
     func fetchGames() async throws -> [Game]
     func fetchLiveProps() async throws -> [PlayerCardData]  // Top picks section
     func fetchForYouProps() async throws -> [PlayerCardData]  // For You section
+    func fetchAllProps() async throws -> [PlayerCardData]  // All props for search
     func searchPlayers(query: String) async throws -> [PlayerCardData]
 }
 
@@ -114,6 +115,13 @@ class MockDataService: DataService {
                 section: .forYou
             )
         ]
+    }
+
+    func fetchAllProps() async throws -> [PlayerCardData] {
+        // Combine all mock data
+        let topPicks = try await fetchLiveProps()
+        let forYou = try await fetchForYouProps()
+        return topPicks + forYou
     }
 
     func searchPlayers(query: String) async throws -> [PlayerCardData] {

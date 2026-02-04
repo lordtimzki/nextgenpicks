@@ -8,8 +8,10 @@ class DataViewModel: ObservableObject {
     @Published var games: [Game] = []
     @Published var featuredProps: [PlayerCardData] = []  // Top picks section
     @Published var forYouProps: [PlayerCardData] = []    // For You section
+    @Published var allProps: [PlayerCardData] = []       // All props for search
     @Published var searchResults: [PlayerCardData] = []
     @Published var isLoading: Bool = false
+    @Published var isSearchLoading: Bool = false
     @Published var errorMessage: String?
 
     // Switch this to FirebaseService() when ready
@@ -38,6 +40,117 @@ class DataViewModel: ObservableObject {
         isLoading = false
     }
 
+    /// Load all props for search functionality
+    func loadAllProps() async {
+        guard allProps.isEmpty else { return }  // Only load once
+
+        isSearchLoading = true
+        do {
+            self.allProps = try await service.fetchAllProps()
+        } catch {
+            print("Failed to load all props: \(error)")
+        }
+        isSearchLoading = false
+    }
+
+    /// Get unique players from all props
+    var uniquePlayers: [PlayerInfo] {
+        var seen = Set<String>()
+        var players: [PlayerInfo] = []
+
+        for prop in allProps {
+            let playerId = prop.player_id ?? prop.id
+            if !seen.contains(playerId) {
+                seen.insert(playerId)
+                players.append(PlayerInfo(
+                    id: playerId,
+                    name: prop.name,
+                    teamAbbr: prop.teamAbbr,
+                    position: prop.position,
+                    imageName: prop.imageName
+                ))
+            }
+        }
+        return players.sorted { $0.name < $1.name }
+    }
+
+    /// Get unique teams from all props
+    var uniqueTeams: [TeamInfo] {
+        var teamDict: [String: TeamInfo] = [:]
+
+        for prop in allProps {
+            let abbr = prop.teamAbbr
+            if !abbr.isEmpty && teamDict[abbr] == nil {
+                teamDict[abbr] = TeamInfo(
+                    abbreviation: abbr,
+                    playerCount: 0
+                )
+            }
+            if var team = teamDict[abbr] {
+                team.playerCount += 1
+                teamDict[abbr] = team
+            }
+        }
+
+        // Count unique players per team
+        var playersByTeam: [String: Set<String>] = [:]
+        for prop in allProps {
+            let abbr = prop.teamAbbr
+            let playerId = prop.player_id ?? prop.id
+            if playersByTeam[abbr] == nil {
+                playersByTeam[abbr] = Set<String>()
+            }
+            playersByTeam[abbr]?.insert(playerId)
+        }
+
+        return teamDict.values.map { team in
+            TeamInfo(
+                abbreviation: team.abbreviation,
+                playerCount: playersByTeam[team.abbreviation]?.count ?? 0
+            )
+        }.sorted { $0.abbreviation < $1.abbreviation }
+    }
+
+    /// Search players by name
+    func searchPlayers(query: String) -> [PlayerInfo] {
+        guard !query.isEmpty else { return uniquePlayers }
+        let lowercased = query.lowercased()
+        return uniquePlayers.filter { $0.name.lowercased().contains(lowercased) }
+    }
+
+    /// Search teams by abbreviation
+    func searchTeams(query: String) -> [TeamInfo] {
+        guard !query.isEmpty else { return uniqueTeams }
+        let lowercased = query.lowercased()
+        return uniqueTeams.filter { $0.abbreviation.lowercased().contains(lowercased) }
+    }
+
+    /// Get all props for a specific player
+    func propsForPlayer(playerId: String) -> [PlayerCardData] {
+        return allProps.filter { ($0.player_id ?? $0.id) == playerId }
+    }
+
+    /// Get all players for a specific team
+    func playersForTeam(teamAbbr: String) -> [PlayerInfo] {
+        var seen = Set<String>()
+        var players: [PlayerInfo] = []
+
+        for prop in allProps where prop.teamAbbr == teamAbbr {
+            let playerId = prop.player_id ?? prop.id
+            if !seen.contains(playerId) {
+                seen.insert(playerId)
+                players.append(PlayerInfo(
+                    id: playerId,
+                    name: prop.name,
+                    teamAbbr: prop.teamAbbr,
+                    position: prop.position,
+                    imageName: prop.imageName
+                ))
+            }
+        }
+        return players.sorted { $0.name < $1.name }
+    }
+
     func search(query: String) {
         guard !query.isEmpty else {
             searchResults = []
@@ -52,4 +165,20 @@ class DataViewModel: ObservableObject {
             }
         }
     }
+}
+
+// MARK: - Search Data Models
+
+struct PlayerInfo: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let teamAbbr: String
+    let position: String
+    let imageName: String
+}
+
+struct TeamInfo: Identifiable, Hashable {
+    var id: String { abbreviation }
+    let abbreviation: String
+    var playerCount: Int
 }

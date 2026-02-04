@@ -72,14 +72,17 @@ class FirebaseService: DataService {
         return try await (topPicks, forYou)
     }
 
-    /// Fallback method to fetch all props without section filter
-    private func fetchAllProps() async throws -> [PlayerCardData] {
+    /// Fetch all props (for search functionality)
+    func fetchAllProps() async throws -> [PlayerCardData] {
+        print("🔥 FirebaseService: Fetching all props...")
+
         let snapshot = try await db.collection("props")
             .order(by: "rankingScore", descending: true)
-            .limit(to: 30)
             .getDocuments()
 
-        return decodeDocuments(snapshot.documents)
+        let results = decodeDocuments(snapshot.documents)
+        print("🔥 FirebaseService: Fetched \(results.count) total props")
+        return results
     }
 
     /// Helper to decode documents with detailed error logging

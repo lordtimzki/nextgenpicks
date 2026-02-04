@@ -109,9 +109,9 @@ struct PlayerPropCard: View {
                     endPoint: .bottom
                 )
                 
-                // Badges (Top Right) - Trending + Ranking
+                // Badges (Top Right) - Hot Badge + Ranking
                 VStack(alignment: .trailing, spacing: 4) {
-                    // Trending Badge
+                    // Hot Badge (only show for high-confidence picks)
                     if player.trending == .hot {
                         HStack(spacing: 4) {
                             Image(systemName: "flame.fill")
@@ -123,19 +123,6 @@ struct PlayerPropCard: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.brandOrange.opacity(0.9))
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chart.line.uptrend.xyaxis")
-                                .font(.caption2)
-                            Text("TRENDING")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.brandEmerald.opacity(0.9))
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }

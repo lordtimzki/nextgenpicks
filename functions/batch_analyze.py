@@ -1065,7 +1065,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 # ============================================================
 
 @scheduler_fn.on_schedule(
-    schedule="0 9,18 * * *",
+    schedule="0 0-1,6-23 * * *",
     timezone=scheduler_fn.Timezone("America/Los_Angeles"),
     secrets=["GOOGLE_API_KEY"],
     timeout_sec=540,
