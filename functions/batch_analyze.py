@@ -1317,7 +1317,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 
     if google_api_key:
         try:
-            print("🤖 Running Gemini 2.0 Flash analysis with grounding on top 6 props...")
+            print("🤖 Running Gemini 2.5 Pro analysis on top 6 props...")
 
             # Get top 6 props for AI analysis (reduced from 10 for quality)
             top_6_cards = all_prop_cards[:6]
@@ -1413,14 +1413,12 @@ CONFIDENCE LEVELS:
     ]
 }}"""
 
-            # Use Gemini 2.0 Flash with grounding for real-time search capability
             response = client.models.generate_content(
                 model="gemini-2.5-pro",
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
                     "temperature": 0,
-                    "tools": [{"google_search": {}}],
                 }
             )
             ai_results = json.loads(response.text)
@@ -1839,7 +1837,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
 
     if google_api_key:
         try:
-            print("🤖 Running Gemini 2.0 Flash analysis with grounding on top 6 props...")
+            print("🤖 Running Gemini 2.5 Pro analysis on top 6 props...")
 
             top_6_cards = all_prop_cards[:6]
 
@@ -1927,14 +1925,12 @@ CONFIDENCE LEVELS:
     ]
 }}"""
 
-            # Use Gemini 2.0 Flash with grounding for real-time search capability
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-pro",
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
                     "temperature": 0,
-                    "tools": [{"google_search": {}}],
                 }
             )
             ai_results = json.loads(response.text)
