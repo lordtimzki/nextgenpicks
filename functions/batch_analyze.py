@@ -1458,14 +1458,20 @@ CONFIDENCE LEVELS:
                         ai_direction = p.get("direction", "Over")
                         ai_confidence = p.get("confidence", "Lean")
 
-                        # Map confidence to trending
-                        trending = "hot" if ai_confidence == "Strong" else "up"
+                        # Map confidence to trending: hot (strong), up (lean), fade (avoid)
+                        if ai_confidence == "Strong":
+                            trending = "hot"
+                        elif ai_confidence == "Fade":
+                            trending = "fade"
+                        else:
+                            trending = "up"
 
                         update_data = {
                             "trending": trending,
                             "ai_analysis": analysis,
                             "aiRecommended": ai_direction,
                             "aiConfidence": ai_confidence,
+                            "isFade": ai_confidence == "Fade",
                         }
 
                         db.collection("props").document(
@@ -1966,14 +1972,20 @@ CONFIDENCE LEVELS:
                         ai_direction = p.get("direction", "Over")
                         ai_confidence = p.get("confidence", "Lean")
 
-                        # Map confidence to trending
-                        trending = "hot" if ai_confidence == "Strong" else "up"
+                        # Map confidence to trending: hot (strong), up (lean), fade (avoid)
+                        if ai_confidence == "Strong":
+                            trending = "hot"
+                        elif ai_confidence == "Fade":
+                            trending = "fade"
+                        else:
+                            trending = "up"
 
                         update_data = {
                             "trending": trending,
                             "ai_analysis": analysis,
                             "aiRecommended": ai_direction,
                             "aiConfidence": ai_confidence,
+                            "isFade": ai_confidence == "Fade",
                         }
 
                         db.collection("props").document(

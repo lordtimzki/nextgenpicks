@@ -109,7 +109,7 @@ struct PlayerPropCard: View {
                     endPoint: .bottom
                 )
                 
-                // Badges (Top Right) - Hot Badge + Ranking
+                // Badges (Top Right) - Hot/Fade Badge + Ranking
                 VStack(alignment: .trailing, spacing: 4) {
                     // Hot Badge (only show for high-confidence picks)
                     if player.trending == .hot {
@@ -123,6 +123,22 @@ struct PlayerPropCard: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.brandOrange.opacity(0.9))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    // Fade Badge (show for props AI recommends avoiding)
+                    if player.trending == .fade || player.isFade == true {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                            Text("FADE")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.gray.opacity(0.9))
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
