@@ -419,12 +419,14 @@ def calculate_odds_value_score(props: list) -> float:
 
 def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   lineup_status: str = "", hit_rate: dict = None,
-                                  trend_data: dict = None) -> tuple:
+                                  trend_data: dict = None,
+                                  opp_def_rank: int = None,
+                                  opp_pace_rank: int = None) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score, recommended_direction)
 
-    Formula: (edgeScore * 0.40) + (hitRateScore * 0.20) + (starPowerScore * 0.25) + (oddsValueScore * 0.15)
+    Formula v3: (edge * 0.35) + (matchup * 0.20) + (hitRate * 0.20) + (star * 0.10) + (odds * 0.15)
     Then apply lineup and trend modifiers.
     """
     stat = prop.get("stat_name", "").lower()
@@ -491,8 +493,11 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     else:
         odds_score = 2.0
 
-    # Calculate base total score
-    total = (edge_score * 0.40) + (hit_rate_score * 0.20) + (star_score * 0.25) + (odds_score * 0.15)
+    # 6. Matchup Score - direction-aware opponent quality
+    matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction)
+
+    # Calculate base total score (v3 weights)
+    total = (edge_score * 0.35) + (matchup_score * 0.20) + (hit_rate_score * 0.20) + (star_score * 0.10) + (odds_score * 0.15)
 
     # Apply lineup modifiers
     if lineup_status == "GTD":
@@ -512,6 +517,37 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
             total = min(10.0, total * 1.05)
 
     return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction
+
+
+def calculate_matchup_score(opp_def_rank: int = None, opp_pace_rank: int = None,
+                            direction: str = None) -> float:
+    """
+    Calculate direction-aware matchup score (0-10) using opponent defense + pace.
+
+    For Over: weak defense (high rank) + fast pace (low rank) = favorable (high score)
+    For Under: strong defense (low rank) + slow pace (high rank) = favorable (high score)
+    Defense weighted 60%, pace 40%.
+    Returns 5.0 (neutral) if direction unknown or data missing.
+    """
+    if direction is None or (opp_def_rank is None and opp_pace_rank is None):
+        return 5.0
+
+    # Default to mid-rank if one is missing
+    def_rank = opp_def_rank if opp_def_rank is not None else 15
+    pace_rank = opp_pace_rank if opp_pace_rank is not None else 15
+
+    if direction == "Over":
+        # Over: high def_rank (weak D) = good, low pace_rank (fast) = good
+        defense_component = (def_rank / 30.0) * 10.0
+        pace_component = ((31 - pace_rank) / 30.0) * 10.0
+    elif direction == "Under":
+        # Under: low def_rank (strong D) = good, high pace_rank (slow) = good
+        defense_component = ((31 - def_rank) / 30.0) * 10.0
+        pace_component = (pace_rank / 30.0) * 10.0
+    else:
+        return 5.0
+
+    return round((defense_component * 0.60) + (pace_component * 0.40), 2)
 
 
 def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
@@ -1311,12 +1347,24 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             hit_rate = calculate_hit_rate(last5_games, stat_name, line)
             trend_data = calculate_trend_score(last5_games, stat_name)
 
+            # Get opponent defense stats for matchup scoring
+            opp_def_stats = team_defense_cache.get(opponent_abbr, {})
+
             # Calculate ranking score with all context
             prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
                 hit_rate=hit_rate,
-                trend_data=trend_data
+                trend_data=trend_data,
+                opp_def_rank=opp_def_stats.get("def_rank"),
+                opp_pace_rank=opp_def_stats.get("pace_rank")
+            )
+
+            # Calculate matchup score for prop card (informational)
+            matchup_score = calculate_matchup_score(
+                opp_def_stats.get("def_rank"),
+                opp_def_stats.get("pace_rank"),
+                recommended_direction
             )
 
             # Format stat name
@@ -1361,6 +1409,10 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 "playerAverage": player_avg,
                 "urgencyScore": urgency_score,
                 "recommendedDirection": recommended_direction,
+                # Matchup data
+                "matchupScore": matchup_score,
+                "oppDefRank": opp_def_stats.get("def_rank"),
+                "oppPaceRank": opp_def_stats.get("pace_rank"),
                 # Hit rate data (last 5 games)
                 "hitRate": {
                     "hits": hit_rate["hits"],
@@ -1569,6 +1621,7 @@ CAUTION signals:
 - When recent_avg is significantly lower than player_avg (>20% gap), the season average is misleading. Weight recent_avg more heavily.
 - When lineup_status = "" (unknown) AND player_avg < 15 pts (low production), be skeptical - bench players may not play starter minutes.
 - ROSTER CHANGES: Use your knowledge of recent trades and acquisitions. A new teammate at the same position or role can cannibalize stats (e.g., a new center reduces rebounding shares for wings, a new ball-handler reduces assists for existing guards). If a recent roster addition likely impacts the stat being propped, factor that into your direction and confidence.
+- INDIVIDUAL MATCHUPS: Consider the likely primary defender based on position. A player going against an elite perimeter defender (e.g., for 3PM/Points props) or a strong interior defender (e.g., for Rebounds props) is a counter-signal for Over, even if the team defense rank is weak overall. Mention the specific defender in your analysis when relevant.
 
 CONFIDENCE LEVELS:
 - "Strong": 3+ signals align in same direction AND NO significant counter-signals (e.g., recommending Over but pace is slow, or defense is elite) AND player confirmed to play. If any counter-signal exists, use "Lean" instead.
@@ -1648,12 +1701,26 @@ CONFIDENCE LEVELS:
                         else:
                             trending = "up"
 
+                        # Apply Gemini confidence modifier to ranking score
+                        pre_ai_score = card["rankingScore"]
+                        if ai_confidence == "Strong":
+                            adjusted_score = round(min(10.0, pre_ai_score * 1.15), 2)
+                        elif ai_confidence == "Fade":
+                            adjusted_score = round(pre_ai_score * 0.65, 2)
+                        else:
+                            adjusted_score = pre_ai_score
+
+                        card["rankingScore"] = adjusted_score
+                        card["preAiRankingScore"] = pre_ai_score
+
                         update_data = {
                             "trending": trending,
                             "ai_analysis": analysis,
                             "aiRecommended": ai_direction,
                             "aiConfidence": ai_confidence,
                             "isFade": ai_confidence == "Fade",
+                            "rankingScore": adjusted_score,
+                            "preAiRankingScore": pre_ai_score,
                         }
 
                         db.collection("props").document(
@@ -1661,7 +1728,7 @@ CONFIDENCE LEVELS:
                         ai_updated_count += 1
                         matched = True
                         print(
-                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction})")
+                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction}) score: {pre_ai_score} → {adjusted_score}")
                         break
 
                 if not matched:
@@ -1670,6 +1737,46 @@ CONFIDENCE LEVELS:
 
             print(
                 f"✓ AI analysis matched {ai_updated_count}/{len(ai_props)} props")
+
+            # Re-sort and re-assign sections after AI score adjustments
+            all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
+
+            new_for_you_count = min(5, len(all_prop_cards))
+            section_updates = {}
+
+            for i, card in enumerate(all_prop_cards):
+                if i < new_for_you_count:
+                    new_section = "forYou"
+                    new_featured = True
+                elif i < 20:
+                    new_section = "topPicks"
+                    new_featured = True
+                else:
+                    new_section = "allProps"
+                    new_featured = False
+
+                old_section = card.get("section", "")
+                if new_section != old_section or card.get("featured") != new_featured:
+                    card["section"] = new_section
+                    card["featured"] = new_featured
+                    if card.get("id"):
+                        section_updates[card["id"]] = {
+                            "section": new_section,
+                            "featured": new_featured,
+                        }
+
+            if section_updates:
+                update_batch = db.batch()
+                batch_count = 0
+                for doc_id, updates in section_updates.items():
+                    update_batch.update(db.collection("props").document(doc_id), updates)
+                    batch_count += 1
+                    if batch_count % 400 == 0:
+                        update_batch.commit()
+                        update_batch = db.batch()
+                if batch_count % 400 != 0:
+                    update_batch.commit()
+                print(f"✓ Re-assigned sections for {len(section_updates)} props after AI adjustments")
 
         except Exception as e:
             print(f"⚠️ Gemini error (props already saved without AI): {e}")
@@ -1933,12 +2040,24 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             hit_rate = calculate_hit_rate(last5_games, stat_name, line)
             trend_data = calculate_trend_score(last5_games, stat_name)
 
+            # Get opponent defense stats for matchup scoring
+            opp_def_stats = team_defense_cache.get(opponent_abbr, {})
+
             # Calculate ranking score with all context
             prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
                 hit_rate=hit_rate,
-                trend_data=trend_data
+                trend_data=trend_data,
+                opp_def_rank=opp_def_stats.get("def_rank"),
+                opp_pace_rank=opp_def_stats.get("pace_rank")
+            )
+
+            # Calculate matchup score for prop card (informational)
+            matchup_score = calculate_matchup_score(
+                opp_def_stats.get("def_rank"),
+                opp_def_stats.get("pace_rank"),
+                recommended_direction
             )
 
             short_name = stat_name.replace(
@@ -1980,6 +2099,10 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "playerAverage": player_avg,
                 "urgencyScore": urgency_score,
                 "recommendedDirection": recommended_direction,
+                # Matchup data
+                "matchupScore": matchup_score,
+                "oppDefRank": opp_def_stats.get("def_rank"),
+                "oppPaceRank": opp_def_stats.get("pace_rank"),
                 "hitRate": {"hits": hit_rate["hits"], "total": hit_rate["total"], "results": hit_rate["results"]},
                 # Trend data
                 "trendData": {
@@ -2135,6 +2258,7 @@ CAUTION signals:
 - When recent_avg is significantly lower than player_avg (>20% gap), the season average is misleading. Weight recent_avg more heavily.
 - When lineup_status = "" (unknown) AND player_avg < 15 pts (low production), be skeptical - bench players may not play starter minutes.
 - ROSTER CHANGES: Use your knowledge of recent trades and acquisitions. A new teammate at the same position or role can cannibalize stats (e.g., a new center reduces rebounding shares for wings, a new ball-handler reduces assists for existing guards). If a recent roster addition likely impacts the stat being propped, factor that into your direction and confidence.
+- INDIVIDUAL MATCHUPS: Consider the likely primary defender based on position. A player going against an elite perimeter defender (e.g., for 3PM/Points props) or a strong interior defender (e.g., for Rebounds props) is a counter-signal for Over, even if the team defense rank is weak overall. Mention the specific defender in your analysis when relevant.
 
 CONFIDENCE LEVELS:
 - "Strong": 3+ signals align in same direction AND NO significant counter-signals (e.g., recommending Over but pace is slow, or defense is elite) AND player confirmed to play. If any counter-signal exists, use "Lean" instead.
@@ -2210,23 +2334,69 @@ CONFIDENCE LEVELS:
                         else:
                             trending = "up"
 
+                        # Apply Gemini confidence modifier to ranking score
+                        pre_ai_score = card["rankingScore"]
+                        if ai_confidence == "Strong":
+                            adjusted_score = round(min(10.0, pre_ai_score * 1.15), 2)
+                        elif ai_confidence == "Fade":
+                            adjusted_score = round(pre_ai_score * 0.65, 2)
+                        else:
+                            adjusted_score = pre_ai_score
+
+                        card["rankingScore"] = adjusted_score
+                        card["preAiRankingScore"] = pre_ai_score
+
                         update_data = {
                             "trending": trending,
                             "ai_analysis": analysis,
                             "aiRecommended": ai_direction,
                             "aiConfidence": ai_confidence,
                             "isFade": ai_confidence == "Fade",
+                            "rankingScore": adjusted_score,
+                            "preAiRankingScore": pre_ai_score,
                         }
 
                         db.collection("props").document(
                             doc_id).update(update_data)
                         ai_updated_count += 1
                         print(
-                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction})")
+                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction}) score: {pre_ai_score} → {adjusted_score}")
                         break
 
             print(
                 f"✓ AI analysis matched {ai_updated_count}/{len(ai_props)} props")
+
+            # Re-sort and re-assign sections after AI score adjustments
+            all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
+
+            new_for_you_count = min(5, len(all_prop_cards))
+            section_updates = {}
+
+            for i, card in enumerate(all_prop_cards):
+                if i < new_for_you_count:
+                    new_section = "forYou"
+                    new_featured = True
+                elif i < 20:
+                    new_section = "topPicks"
+                    new_featured = True
+                else:
+                    new_section = "allProps"
+                    new_featured = False
+
+                old_section = card.get("section", "")
+                if new_section != old_section or card.get("featured") != new_featured:
+                    card["section"] = new_section
+                    card["featured"] = new_featured
+                    if card.get("id"):
+                        section_updates[card["id"]] = {
+                            "section": new_section,
+                            "featured": new_featured,
+                        }
+
+            if section_updates:
+                for doc_id, updates in section_updates.items():
+                    db.collection("props").document(doc_id).update(updates)
+                print(f"✓ Re-assigned sections for {len(section_updates)} props after AI adjustments")
 
         except Exception as e:
             print(f"⚠️ Gemini error (props already saved without AI): {e}")
