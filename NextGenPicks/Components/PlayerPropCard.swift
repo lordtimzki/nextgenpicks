@@ -109,7 +109,7 @@ struct PlayerPropCard: View {
                     endPoint: .bottom
                 )
                 
-                // Badges (Top Right) - Hot Badge + Ranking
+                // Badges (Top Right) - Hot/Fade Badge + Ranking
                 VStack(alignment: .trailing, spacing: 4) {
                     // Hot Badge (only show for high-confidence picks)
                     if player.trending == .hot {
@@ -127,8 +127,24 @@ struct PlayerPropCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
-                    // Ranking Score Badge (if available and high enough)
-                    if let score = player.rankingScore, score >= 5.0 {
+                    // Fade Badge (show for props AI recommends avoiding)
+                    if player.trending == .fade || player.isFade == true {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                            Text("FADE")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.gray.opacity(0.9))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    // Ranking Score Badge (if available)
+                    if let score = player.rankingScore {
                         HStack(spacing: 3) {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 8))
@@ -160,6 +176,34 @@ struct PlayerPropCard: View {
                 Text(player.opponent)
                     .font(.caption)
                     .fontWeight(.medium)
+
+                // Lineup status badge
+                if player.lineupStatus == "STARTING" {
+                    HStack(spacing: 2) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                        Text("Confirmed")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.brandEmerald.opacity(0.85))
+                    .clipShape(Capsule())
+                } else if player.lineupStatus == "GTD" {
+                    HStack(spacing: 2) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                        Text("GTD")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.brandOrange.opacity(0.85))
+                    .clipShape(Capsule())
+                }
+
                 Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: "clock")

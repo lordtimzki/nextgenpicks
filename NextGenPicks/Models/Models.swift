@@ -37,6 +37,7 @@ struct Game: Identifiable, Codable {
 enum TrendingStatus: String, Codable {
     case up
     case hot
+    case fade
 }
 
 // Hit rate result for a single game
@@ -180,6 +181,43 @@ enum PropSection: String, Codable {
     case allProps
 }
 
+struct TrendData: Codable {
+    let trend: String
+    let declinePct: Double
+    let surgePct: Double
+    let recentAvg: Double
+    let fullAvg: Double
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.trend = try container.decodeIfPresent(String.self, forKey: .trend) ?? ""
+
+        if let d = try? container.decode(Double.self, forKey: .declinePct) { self.declinePct = d }
+        else if let i = try? container.decode(Int.self, forKey: .declinePct) { self.declinePct = Double(i) }
+        else { self.declinePct = 0 }
+
+        if let d = try? container.decode(Double.self, forKey: .surgePct) { self.surgePct = d }
+        else if let i = try? container.decode(Int.self, forKey: .surgePct) { self.surgePct = Double(i) }
+        else { self.surgePct = 0 }
+
+        if let d = try? container.decode(Double.self, forKey: .recentAvg) { self.recentAvg = d }
+        else if let i = try? container.decode(Int.self, forKey: .recentAvg) { self.recentAvg = Double(i) }
+        else { self.recentAvg = 0 }
+
+        if let d = try? container.decode(Double.self, forKey: .fullAvg) { self.fullAvg = d }
+        else if let i = try? container.decode(Int.self, forKey: .fullAvg) { self.fullAvg = Double(i) }
+        else { self.fullAvg = 0 }
+    }
+
+    init(trend: String, declinePct: Double, surgePct: Double, recentAvg: Double, fullAvg: Double) {
+        self.trend = trend
+        self.declinePct = declinePct
+        self.surgePct = surgePct
+        self.recentAvg = recentAvg
+        self.fullAvg = fullAvg
+    }
+}
+
 struct PlayerCardData: Identifiable, Codable {
     let id: String  // Changed to String to support both NBA API int IDs and Underdog UUIDs
     let name: String
@@ -219,6 +257,9 @@ struct PlayerCardData: Identifiable, Codable {
     var rankingScore: Double?
     var playerAverages: PlayerAverages?
     var hitRate: HitRate?  // Last 5 games hit rate for this prop
+    var isFade: Bool?  // AI marked as fade (avoid this prop)
+    var lineupStatus: String?  // "STARTING", "GTD", or ""
+    var trendData: TrendData?
 
     // Computed property: get the main prop (either from single prop fields or first of array)
     var mainProp: PlayerProp? {
@@ -245,7 +286,7 @@ struct PlayerCardData: Identifiable, Codable {
     init(id: Any, name: String, teamAbbr: String, position: String, imageName: String,
          props: [PlayerProp]? = nil, opponent: String, gameTime: String, trending: TrendingStatus,
          ai_analysis: String? = nil, aiRecommended: String? = nil, source: String? = nil, last_updated: String? = nil, gameTimeUTC: String? = nil,
-         featured: Bool? = nil, rankingScore: Double? = nil, playerAverages: PlayerAverages? = nil, hitRate: HitRate? = nil,
+         featured: Bool? = nil, rankingScore: Double? = nil, playerAverages: PlayerAverages? = nil, hitRate: HitRate? = nil, isFade: Bool? = nil, lineupStatus: String? = nil, trendData: TrendData? = nil,
          statName: String? = nil, statNameFull: String? = nil, line: Double? = nil,
          overOdds: Int? = nil, underOdds: Int? = nil, propId: String? = nil,
          edge: Double? = nil, playerAverage: Double? = nil, urgencyScore: Double? = nil,
@@ -275,6 +316,9 @@ struct PlayerCardData: Identifiable, Codable {
         self.rankingScore = rankingScore
         self.playerAverages = playerAverages
         self.hitRate = hitRate
+        self.isFade = isFade
+        self.lineupStatus = lineupStatus
+        self.trendData = trendData
         // New single prop fields
         self.statName = statName
         self.statNameFull = statNameFull
@@ -380,5 +424,8 @@ struct PlayerCardData: Identifiable, Codable {
         }
         self.playerAverages = try container.decodeIfPresent(PlayerAverages.self, forKey: .playerAverages)
         self.hitRate = try container.decodeIfPresent(HitRate.self, forKey: .hitRate)
+        self.isFade = try container.decodeIfPresent(Bool.self, forKey: .isFade)
+        self.lineupStatus = try container.decodeIfPresent(String.self, forKey: .lineupStatus)
+        self.trendData = try container.decodeIfPresent(TrendData.self, forKey: .trendData)
     }
 }

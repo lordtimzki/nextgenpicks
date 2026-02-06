@@ -84,6 +84,50 @@ async def get_player_data(player_name):
         "last_10_games": recent_games
     }
 
+# Bulk fetch all team defense stats (single API call for all 30 teams)
+def get_all_team_defense_stats() -> dict:
+    """
+    Fetch defense stats for all NBA teams in one API call.
+    Returns dict keyed by team abbreviation with def_rating, def_rank, pace, pace_rank.
+    """
+    print("DEBUG: Fetching defense stats for all 30 NBA teams...")
+
+    try:
+        # LeagueDashTeamStats returns all teams in one call
+        stats = leaguedashteamstats.LeagueDashTeamStats(
+            season='2025-26',
+            measure_type_detailed_defense='Advanced'
+        )
+        df = stats.get_data_frames()[0]
+
+        team_stats = {}
+        for _, row in df.iterrows():
+            team_name = row['TEAM_NAME']
+            team_abbrev = row.get('TEAM_ABBREVIATION', '')
+
+            # If no abbreviation in data, try to look it up
+            if not team_abbrev:
+                nba_team = teams.find_teams_by_full_name(team_name)
+                if nba_team:
+                    team_abbrev = nba_team[0].get('abbreviation', '')
+
+            if team_abbrev:
+                team_stats[team_abbrev] = {
+                    "name": str(team_name),
+                    "def_rating": float(row['DEF_RATING']),
+                    "def_rank": int(row['DEF_RATING_RANK']),
+                    "pace": float(row['PACE']),
+                    "pace_rank": int(row['PACE_RANK'])
+                }
+
+        print(f"DEBUG: Fetched defense stats for {len(team_stats)} teams")
+        return team_stats
+
+    except Exception as e:
+        print(f"ERROR fetching all team stats: {e}")
+        return {}
+
+
 # Team stats using nba api
 async def get_team_stats(team_name: str):
     print(f"DEBUG: Fetching stats for opponent: {team_name}")
