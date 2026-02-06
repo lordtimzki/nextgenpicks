@@ -937,6 +937,51 @@ def calculate_trend_score(last5_games: list, stat_name: str) -> dict:
         return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": round(recent_avg, 1), "full_avg": round(full_avg, 1)}
 
 
+def validate_hot_label(card: dict, summary: dict, ai_direction: str) -> str:
+    """Cross-check Gemini's 'Strong' confidence against actual data.
+    Returns 'hot' only if no counter-signals exist, otherwise 'up'."""
+
+    direction = ai_direction.lower().strip()
+    opp_pace_rank = summary.get("opp_pace_rank") or 15
+    opp_def_rank = summary.get("opp_def_rank") or 15
+    trend = summary.get("trend", "stable")
+    edge_pct = summary.get("edge_pct", 0)
+
+    # Parse hit_rate string like "4/5"
+    hit_rate_str = summary.get("hit_rate", "0/0")
+    try:
+        hits, total = hit_rate_str.split("/")
+        hits, total = int(hits), int(total)
+    except (ValueError, AttributeError):
+        hits, total = 0, 0
+
+    if direction == "over":
+        if opp_pace_rank > 20:
+            return "up"  # slow pace game
+        if opp_def_rank < 10:
+            return "up"  # elite defense
+        if trend == "declining":
+            return "up"  # recent production dropping
+        if edge_pct < 5:
+            return "up"  # not enough edge
+        if total > 0 and hits / total < 3 / 5:
+            return "up"  # hasn't been clearing line
+
+    elif direction == "under":
+        if opp_pace_rank < 10:
+            return "up"  # fast pace game
+        if opp_def_rank > 20:
+            return "up"  # weak defense
+        if trend == "surging":
+            return "up"  # recent production rising
+        if edge_pct > -5:
+            return "up"  # not enough under-edge
+        if total > 0 and hits / total > 2 / 5:
+            return "up"  # has been clearing line
+
+    return "hot"
+
+
 def format_props_for_ios(props: list) -> list:
     """Format Underdog props for iOS app structure."""
     ios_props = []
@@ -1523,9 +1568,10 @@ CAUTION signals:
 - CRITICAL: When trend = "declining" AND teammates are returning from injury, usage is likely dropping. Use recent_avg instead of player_avg for edge assessment.
 - When recent_avg is significantly lower than player_avg (>20% gap), the season average is misleading. Weight recent_avg more heavily.
 - When lineup_status = "" (unknown) AND player_avg < 15 pts (low production), be skeptical - bench players may not play starter minutes.
+- ROSTER CHANGES: Use your knowledge of recent trades and acquisitions. A new teammate at the same position or role can cannibalize stats (e.g., a new center reduces rebounding shares for wings, a new ball-handler reduces assists for existing guards). If a recent roster addition likely impacts the stat being propped, factor that into your direction and confidence.
 
 CONFIDENCE LEVELS:
-- "Strong": 3+ signals align in same direction AND player confirmed to play
+- "Strong": 3+ signals align in same direction AND NO significant counter-signals (e.g., recommending Over but pace is slow, or defense is elite) AND player confirmed to play. If any counter-signal exists, use "Lean" instead.
 - "Lean": 2 signals align, or edge_pct > 15%
 - "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain OR trend is declining with high decline_pct
 
@@ -1537,7 +1583,7 @@ CONFIDENCE LEVELS:
             "stat": "Points|Rebounds|Assists|3-Pointers Made|Pts + Rebs + Asts",
             "direction": "Over" or "Under",
             "confidence": "Strong" or "Lean" or "Fade",
-            "analysis": "[2-3 sentences citing specific numbers. Mention trend/recent_avg and lineup status if relevant. End with clear verdict.]"
+            "analysis": "[2-3 sentences citing specific numbers. Mention trend/recent_avg, lineup status, and roster changes (trades/new teammates) if they impact the stat. End with clear verdict.]"
         }}
     ]
 }}"""
@@ -1570,6 +1616,12 @@ CONFIDENCE LEVELS:
                     return "pts + rebs + asts"
                 return stat
 
+            # Build lookup dict from prop_summaries for hot label validation
+            summary_lookup = {}
+            for s in prop_summaries:
+                key = (s["player"].lower().strip(), normalize_stat(s["stat"]))
+                summary_lookup[key] = s
+
             # Update the top props in Firestore with AI analysis
             for p in ai_props:
                 player_name = p.get("player", "").lower().strip()
@@ -1587,9 +1639,10 @@ CONFIDENCE LEVELS:
                         ai_direction = p.get("direction", "Over")
                         ai_confidence = p.get("confidence", "Lean")
 
-                        # Map confidence to trending: hot (strong), up (lean), fade (avoid)
+                        # Map confidence to trending with cross-check validation
                         if ai_confidence == "Strong":
-                            trending = "hot"
+                            summary = summary_lookup.get((player_name, stat_name), {})
+                            trending = validate_hot_label(card, summary, ai_direction)
                         elif ai_confidence == "Fade":
                             trending = "fade"
                         else:
@@ -2081,9 +2134,10 @@ CAUTION signals:
 - CRITICAL: When trend = "declining" AND teammates are returning from injury, usage is likely dropping. Use recent_avg instead of player_avg for edge assessment.
 - When recent_avg is significantly lower than player_avg (>20% gap), the season average is misleading. Weight recent_avg more heavily.
 - When lineup_status = "" (unknown) AND player_avg < 15 pts (low production), be skeptical - bench players may not play starter minutes.
+- ROSTER CHANGES: Use your knowledge of recent trades and acquisitions. A new teammate at the same position or role can cannibalize stats (e.g., a new center reduces rebounding shares for wings, a new ball-handler reduces assists for existing guards). If a recent roster addition likely impacts the stat being propped, factor that into your direction and confidence.
 
 CONFIDENCE LEVELS:
-- "Strong": 3+ signals align in same direction AND player confirmed to play
+- "Strong": 3+ signals align in same direction AND NO significant counter-signals (e.g., recommending Over but pace is slow, or defense is elite) AND player confirmed to play. If any counter-signal exists, use "Lean" instead.
 - "Lean": 2 signals align, or edge_pct > 15%
 - "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain OR trend is declining with high decline_pct
 
@@ -2095,7 +2149,7 @@ CONFIDENCE LEVELS:
             "stat": "Points|Rebounds|Assists|3-Pointers Made|Pts + Rebs + Asts",
             "direction": "Over" or "Under",
             "confidence": "Strong" or "Lean" or "Fade",
-            "analysis": "[2-3 sentences citing specific numbers. Mention trend/recent_avg and lineup status if relevant. End with clear verdict.]"
+            "analysis": "[2-3 sentences citing specific numbers. Mention trend/recent_avg, lineup status, and roster changes (trades/new teammates) if they impact the stat. End with clear verdict.]"
         }}
     ]
 }}"""
@@ -2127,6 +2181,12 @@ CONFIDENCE LEVELS:
                     return "pts + rebs + asts"
                 return stat
 
+            # Build lookup dict from prop_summaries for hot label validation
+            summary_lookup = {}
+            for s in prop_summaries:
+                key = (s["player"].lower().strip(), normalize_stat(s["stat"]))
+                summary_lookup[key] = s
+
             for p in ai_props:
                 player_name = p.get("player", "").lower().strip()
                 stat_name = normalize_stat(p.get("stat", ""))
@@ -2141,9 +2201,10 @@ CONFIDENCE LEVELS:
                         ai_direction = p.get("direction", "Over")
                         ai_confidence = p.get("confidence", "Lean")
 
-                        # Map confidence to trending: hot (strong), up (lean), fade (avoid)
+                        # Map confidence to trending with cross-check validation
                         if ai_confidence == "Strong":
-                            trending = "hot"
+                            summary = summary_lookup.get((player_name, stat_name), {})
+                            trending = validate_hot_label(card, summary, ai_direction)
                         elif ai_confidence == "Fade":
                             trending = "fade"
                         else:
