@@ -422,7 +422,8 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score, recommended_direction)
 
-    Formula: (edgeScore * 0.4) + (starPowerScore * 0.3) + (urgencyScore * 0.2) + (oddsValueScore * 0.1)
+    Formula: (edgeScore * 0.55) + (starPowerScore * 0.30) + (oddsValueScore * 0.15)
+    Note: urgency_score is still calculated and returned for personalization, but not used in ranking.
     """
     stat = prop.get("stat_name", "").lower()
     line = float(prop.get("line", 0))
@@ -479,9 +480,8 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
     else:
         odds_score = 2.0
 
-    # Calculate total score
-    total = (edge_score * 0.4) + (star_score * 0.3) + \
-        (urgency_score * 0.2) + (odds_score * 0.1)
+    # Calculate total score (urgency excluded - used for personalization only)
+    total = (edge_score * 0.55) + (star_score * 0.30) + (odds_score * 0.15)
 
     return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction
 
@@ -494,7 +494,7 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str) 
     averages = player_data.get("averages", {"pts": 0, "reb": 0, "ast": 0})
 
     best_score = 0
-    best_components = {"edge": 0, "star": 0, "urgency": 0, "odds": 0}
+    best_components = {"edge": 0, "star": 0, "odds": 0}
 
     for prop in props:
         score, edge, player_avg, urgency, recommended_direction = calculate_prop_ranking_score(
@@ -506,7 +506,6 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str) 
             best_components = {
                 "edge": round(min(10.0, max(0.0, (edge / 5.0) * 10.0)), 2),
                 "star": round(min(10.0, total_production / 4.0), 2),
-                "urgency": round(urgency, 2),
                 "odds": 5.0
             }
 
@@ -1356,9 +1355,9 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 prop_summaries.append(summary)
 
             client = genai.Client(api_key=google_api_key)
-            prompt = f"""You are an elite NBA handicapper with access to real-time search. Analyze each prop using the DECISION FRAMEWORK below.
+            prompt = f"""You are an elite NBA handicapper. Analyze each prop using the DECISION FRAMEWORK below.
 
-If any player has lineup_status = "GTD" or critical injury info is missing, use Google Search to check their latest status before making your recommendation.
+IMPORTANT: The team data provided below is current and accurate. Players may have been traded recently - trust the team assignments in this data over your training data.
 
 **PROP DATA:**
 {json.dumps(prop_summaries, indent=2)}
@@ -1874,9 +1873,9 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 prop_summaries.append(summary)
 
             client = genai.Client(api_key=google_api_key)
-            prompt = f"""You are an elite NBA handicapper with access to real-time search. Analyze each prop using the DECISION FRAMEWORK below.
+            prompt = f"""You are an elite NBA handicapper. Analyze each prop using the DECISION FRAMEWORK below.
 
-If any player has lineup_status = "GTD" or critical injury info is missing, use Google Search to check their latest status before making your recommendation.
+IMPORTANT: The team data provided below is current and accurate. Players may have been traded recently - trust the team assignments in this data over your training data.
 
 **PROP DATA:**
 {json.dumps(prop_summaries, indent=2)}

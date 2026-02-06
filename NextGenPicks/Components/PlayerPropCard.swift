@@ -143,8 +143,8 @@ struct PlayerPropCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
-                    // Ranking Score Badge (if available and high enough)
-                    if let score = player.rankingScore, score >= 5.0 {
+                    // Ranking Score Badge (if available)
+                    if let score = player.rankingScore {
                         HStack(spacing: 3) {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 8))
