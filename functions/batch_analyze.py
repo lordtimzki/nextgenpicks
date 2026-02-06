@@ -417,13 +417,15 @@ def calculate_odds_value_score(props: list) -> float:
     return best_odds_score
 
 
-def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str) -> tuple:
+def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
+                                  lineup_status: str = "", hit_rate: dict = None,
+                                  trend_data: dict = None) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score, recommended_direction)
 
-    Formula: (edgeScore * 0.55) + (starPowerScore * 0.30) + (oddsValueScore * 0.15)
-    Note: urgency_score is still calculated and returned for personalization, but not used in ranking.
+    Formula: (edgeScore * 0.40) + (hitRateScore * 0.20) + (starPowerScore * 0.25) + (oddsValueScore * 0.15)
+    Then apply lineup and trend modifiers.
     """
     stat = prop.get("stat_name", "").lower()
     line = float(prop.get("line", 0))
@@ -433,7 +435,7 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
     stat_lower = stat.lower()
 
     if "3-pointer" in stat_lower or "3pm" in stat_lower:
-        player_avg = averages.get("fg3m", 0)  # Use actual 3PM stat
+        player_avg = averages.get("fg3m", 0)
     elif "point" in stat_lower or "pts" in stat_lower:
         player_avg = averages.get("pts", 0)
     elif "rebound" in stat_lower or "reb" in stat_lower:
@@ -444,25 +446,34 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
         player_avg = averages.get(
             "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
 
+    # Early exit: OUT players get score 0
+    if lineup_status == "OUT":
+        return 0.0, 0.0, round(player_avg, 1), 0.0, None
+
     # 1. Edge Score - how much player avg exceeds the line
     edge = player_avg - line if player_avg > 0 else 0
     edge_score = min(10.0, max(0.0, (edge / 5.0) * 10.0))
 
-    # Determine recommendation: Only if we have real player stats
-    # If player_avg is 0, we don't have data to make a recommendation
+    # Determine recommendation
     recommended_direction = None
     if player_avg > 0:
         recommended_direction = "Over" if player_avg > line else "Under"
 
-    # 2. Star Power Score - based on total production
+    # 2. Hit Rate Score - consistency in last 5 games
+    hit_rate_score = 5.0  # default neutral
+    if hit_rate and hit_rate.get("total", 0) > 0:
+        hit_pct = hit_rate["hits"] / hit_rate["total"]
+        hit_rate_score = hit_pct * 10.0  # 5/5 = 10, 0/5 = 0
+
+    # 3. Star Power Score - based on total production
     total_production = averages.get(
         "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
     star_score = min(10.0, total_production / 4.0)
 
-    # 3. Urgency Score
+    # 4. Urgency Score (returned but not in formula)
     urgency_score = calculate_urgency_score(game_time_utc)
 
-    # 4. Odds Value Score (for this single prop)
+    # 5. Odds Value Score
     try:
         over_odds = int(
             str(prop.get("over_american", "-110")).replace("+", ""))
@@ -480,13 +491,31 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str)
     else:
         odds_score = 2.0
 
-    # Calculate total score (urgency excluded - used for personalization only)
-    total = (edge_score * 0.55) + (star_score * 0.30) + (odds_score * 0.15)
+    # Calculate base total score
+    total = (edge_score * 0.40) + (hit_rate_score * 0.20) + (star_score * 0.25) + (odds_score * 0.15)
+
+    # Apply lineup modifiers
+    if lineup_status == "GTD":
+        total *= 0.4
+    elif lineup_status == "STARTING":
+        total = min(10.0, total * 1.1)
+
+    # Apply trend modifier
+    if trend_data:
+        trend = trend_data.get("trend", "stable")
+        if trend == "declining":
+            decline_pct = trend_data.get("decline_pct", 0)
+            # Penalty up to 30% proportional to decline magnitude
+            penalty = min(0.30, decline_pct / 100.0)
+            total *= (1.0 - penalty)
+        elif trend == "surging":
+            total = min(10.0, total * 1.05)
 
     return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction
 
 
-def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str) -> tuple:
+def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
+                            lineup_status: str = "", last5_games: list = None) -> tuple:
     """
     Calculate ranking score for a player (legacy - finds best prop score).
     Returns (total_score, component_scores)
@@ -497,8 +526,19 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str) 
     best_components = {"edge": 0, "star": 0, "odds": 0}
 
     for prop in props:
+        stat_name = prop.get("stat_name", "")
+        line = float(prop.get("line", 0))
+
+        # Calculate hit rate and trend for this prop
+        hit_rate = calculate_hit_rate(last5_games or [], stat_name, line)
+        trend_data = calculate_trend_score(last5_games or [], stat_name)
+
         score, edge, player_avg, urgency, recommended_direction = calculate_prop_ranking_score(
-            prop, averages, game_time_utc)
+            prop, averages, game_time_utc,
+            lineup_status=lineup_status,
+            hit_rate=hit_rate,
+            trend_data=trend_data
+        )
         if score > best_score:
             best_score = score
             total_production = averages.get(
@@ -845,6 +885,58 @@ def calculate_hit_rate(last5_games: list, stat_name: str, line: float) -> dict:
     }
 
 
+def calculate_trend_score(last5_games: list, stat_name: str) -> dict:
+    """
+    Compare last 2 games vs 5-game avg for a stat.
+    Detects declining or surging usage patterns.
+    Returns dict with trend direction, percentages, and recent average.
+    """
+    if len(last5_games) < 3:
+        return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": 0, "full_avg": 0}
+
+    stat_key = None
+    stat_lower = stat_name.lower()
+
+    if "3-pointer" in stat_lower or "3pm" in stat_lower:
+        stat_key = "fg3m"
+    elif "point" in stat_lower or "pts" in stat_lower:
+        stat_key = "pts"
+    elif "rebound" in stat_lower or "reb" in stat_lower:
+        stat_key = "reb"
+    elif "assist" in stat_lower or "ast" in stat_lower:
+        stat_key = "ast"
+    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        stat_key = "pra"
+
+    if not stat_key:
+        return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": 0, "full_avg": 0}
+
+    # Get values for all games
+    values = []
+    for game in last5_games:
+        if stat_key == "pra":
+            values.append(game.get("pts", 0) + game.get("reb", 0) + game.get("ast", 0))
+        else:
+            values.append(game.get(stat_key, 0))
+
+    full_avg = sum(values) / len(values) if values else 0
+    # Last 2 games (most recent)
+    recent_values = values[:2]
+    recent_avg = sum(recent_values) / len(recent_values) if recent_values else 0
+
+    if full_avg == 0:
+        return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": round(recent_avg, 1), "full_avg": round(full_avg, 1)}
+
+    change_pct = ((recent_avg - full_avg) / full_avg) * 100
+
+    if change_pct <= -20:
+        return {"trend": "declining", "decline_pct": round(abs(change_pct), 1), "surge_pct": 0, "recent_avg": round(recent_avg, 1), "full_avg": round(full_avg, 1)}
+    elif change_pct >= 20:
+        return {"trend": "surging", "decline_pct": 0, "surge_pct": round(change_pct, 1), "recent_avg": round(recent_avg, 1), "full_avg": round(full_avg, 1)}
+    else:
+        return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": round(recent_avg, 1), "full_avg": round(full_avg, 1)}
+
+
 def format_props_for_ios(props: list) -> list:
     """Format Underdog props for iOS app structure."""
     ios_props = []
@@ -1046,6 +1138,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         nba_stats = ep.get("nba_stats") or {}
         averages = nba_stats.get(
             "averages", {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0})
+        last5_games = nba_stats.get("last5Games", [])
         ud_game = ep.get("underdog_game", {})
         game_time_utc = None
         if ud_game.get("scheduled_at"):
@@ -1056,11 +1149,21 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             except:
                 pass
 
-        # Calculate ranking score
+        # Get lineup status for player-level ranking
+        player_name_for_lineup = ep.get("name", "")
+        team_abbr_for_lineup = ep.get("underdog_team_abbr", "")
+        if nba_stats and nba_stats.get("team_code"):
+            team_abbr_for_lineup = nba_stats["team_code"]
+        ep_lineup_status = get_player_lineup_status(
+            player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
+
+        # Calculate ranking score with lineup and trend context
         ranking_score, score_components = calculate_ranking_score(
             {"averages": averages},
             ep["underdog_props"],
-            game_time_utc
+            game_time_utc,
+            lineup_status=ep_lineup_status,
+            last5_games=last5_games
         )
         ep["ranking_score"] = ranking_score
         ep["score_components"] = score_components
@@ -1148,20 +1251,28 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         lineup_status = get_player_lineup_status(
             player_name, lineup_cache, injuries_cache, team_abbr)
 
+        # Skip OUT players entirely - no prop cards created
+        if lineup_status == "OUT":
+            continue
+
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
             # Only include priority stats for cleaner feed
             if stat_name not in priority_stats:
                 continue
 
-            # Calculate ranking score for this specific prop
-            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
-                prop, player_averages, game_time_utc
-            )
-
-            # Calculate hit rate for this prop
+            # Calculate hit rate and trend BEFORE ranking (needed as inputs)
             line = float(prop.get("line", 0))
             hit_rate = calculate_hit_rate(last5_games, stat_name, line)
+            trend_data = calculate_trend_score(last5_games, stat_name)
+
+            # Calculate ranking score with all context
+            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
+                prop, player_averages, game_time_utc,
+                lineup_status=lineup_status,
+                hit_rate=hit_rate,
+                trend_data=trend_data
+            )
 
             # Format stat name
             short_name = stat_name.replace(
@@ -1211,6 +1322,14 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     "total": hit_rate["total"],
                     "results": hit_rate["results"]
                 },
+                # Trend data
+                "trendData": {
+                    "trend": trend_data.get("trend", "stable"),
+                    "declinePct": trend_data.get("decline_pct", 0),
+                    "surgePct": trend_data.get("surge_pct", 0),
+                    "recentAvg": trend_data.get("recent_avg", 0),
+                    "fullAvg": trend_data.get("full_avg", 0),
+                },
                 # Will be set after sorting
                 "section": "topPicks",
                 "featured": False,
@@ -1228,7 +1347,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 "teamInjuries": team_injuries,  # "OUT: J. Embiid | GTD: T. Maxey"
                 "oppInjuries": opp_injuries,
                 "opponentAbbr": opponent_abbr,
-                "lineupStatus": lineup_status,  # "STARTING", "GTD", "OUT", or ""
+                "lineupStatus": lineup_status,  # "STARTING", "GTD", or ""
             }
 
             all_prop_cards.append(prop_card)
@@ -1334,15 +1453,19 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 # Get opponent defense stats from cache
                 opp_stats = team_defense_cache.get(opponent_abbrev, {})
 
-                # Build enriched summary with matchup context
+                # Build enriched summary with matchup context + trend data
+                trend_info = card.get("trendData", {})
                 summary = {
                     "player": card["name"],
                     "team": player_team,
                     "stat": card["statNameFull"],
                     "line": card["line"],
                     "player_avg": card["playerAverage"],
+                    "recent_avg": trend_info.get("recentAvg", card["playerAverage"]),
                     "edge_pct": round(((card["playerAverage"] - card["line"]) / card["line"]) * 100, 1) if card["line"] > 0 else 0,
                     "hit_rate": f"{card['hitRate']['hits']}/{card['hitRate']['total']}",
+                    "trend": trend_info.get("trend", "stable"),
+                    "decline_pct": trend_info.get("declinePct", 0),
                     "opponent": opponent_abbrev if opponent_abbrev else matchup_str,
                     "opp_def_rank": opp_stats.get("def_rank"),
                     "opp_pace_rank": opp_stats.get("pace_rank"),
@@ -1364,7 +1487,10 @@ IMPORTANT: The team data provided below is current and accurate. Players may hav
 
 **METRICS REFERENCE:**
 - edge_pct: How much player_avg exceeds line (positive = over edge, negative = under edge)
+- recent_avg: Player's average over last 2 games (compare to player_avg to see trend)
 - hit_rate: Games over line in last 5 (e.g., "4/5" = hit 4 times)
+- trend: "declining" (last 2 games >20% below avg), "surging" (>20% above), or "stable"
+- decline_pct: How much production has dropped in recent games (0 if not declining)
 - opp_def_rank: 1-30 (1=best defense/hardest, 30=worst defense/easiest)
 - opp_pace_rank: 1-30 (1=fastest pace/more possessions, 30=slowest)
 - rest_status: "B2B" = back-to-back game (fatigue risk), "" = normal rest
@@ -1389,15 +1515,19 @@ UNDER signals:
 - opp_def_rank 1-10 = Elite defense (suppresses stats)
 - opp_pace_rank 20-30 = Slow pace (fewer possessions)
 - rest_status = "B2B" = fatigue factor (especially for older players or high-minute guys)
+- trend = "declining" with decline_pct > 25% = production dropping significantly
 
 CAUTION signals:
 - lineup_status = "GTD" = risky, check latest news
 - lineup_status = "OUT" = skip this prop entirely
+- CRITICAL: When trend = "declining" AND teammates are returning from injury, usage is likely dropping. Use recent_avg instead of player_avg for edge assessment.
+- When recent_avg is significantly lower than player_avg (>20% gap), the season average is misleading. Weight recent_avg more heavily.
+- When lineup_status = "" (unknown) AND player_avg < 15 pts (low production), be skeptical - bench players may not play starter minutes.
 
 CONFIDENCE LEVELS:
 - "Strong": 3+ signals align in same direction AND player confirmed to play
 - "Lean": 2 signals align, or edge_pct > 15%
-- "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain
+- "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain OR trend is declining with high decline_pct
 
 **OUTPUT (JSON):**
 {{
@@ -1407,7 +1537,7 @@ CONFIDENCE LEVELS:
             "stat": "Points|Rebounds|Assists|3-Pointers Made|Pts + Rebs + Asts",
             "direction": "Over" or "Under",
             "confidence": "Strong" or "Lean" or "Fade",
-            "analysis": "[2-3 sentences citing specific numbers. Mention lineup status and injuries if relevant. End with clear verdict.]"
+            "analysis": "[2-3 sentences citing specific numbers. Mention trend/recent_avg and lineup status if relevant. End with clear verdict.]"
         }}
     ]
 }}"""
@@ -1647,6 +1777,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         nba_stats = ep.get("nba_stats") or {}
         averages = nba_stats.get(
             "averages", {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0})
+        last5_games = nba_stats.get("last5Games", [])
         ud_game = ep.get("underdog_game", {})
         game_time_utc = None
         if ud_game.get("scheduled_at"):
@@ -1656,8 +1787,18 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 game_time_utc = game_dt.isoformat()
             except:
                 pass
+
+        # Get lineup status for player-level ranking
+        player_name_for_lineup = ep.get("name", "")
+        team_abbr_for_lineup = ep.get("underdog_team_abbr", "")
+        if nba_stats and nba_stats.get("team_code"):
+            team_abbr_for_lineup = nba_stats["team_code"]
+        ep_lineup_status = get_player_lineup_status(
+            player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
+
         ranking_score, score_components = calculate_ranking_score(
-            {"averages": averages}, ep["underdog_props"], game_time_utc)
+            {"averages": averages}, ep["underdog_props"], game_time_utc,
+            lineup_status=ep_lineup_status, last5_games=last5_games)
         ep["ranking_score"] = ranking_score
         ep["player_averages"] = averages
 
@@ -1725,17 +1866,27 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         lineup_status = get_player_lineup_status(
             player_name, lineup_cache, injuries_cache, team_abbr)
 
+        # Skip OUT players entirely - no prop cards created
+        if lineup_status == "OUT":
+            continue
+
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
             if stat_name not in priority_stats:
                 continue
 
-            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
-                prop, player_averages, game_time_utc
-            )
-
+            # Calculate hit rate and trend BEFORE ranking (needed as inputs)
             line = float(prop.get("line", 0))
             hit_rate = calculate_hit_rate(last5_games, stat_name, line)
+            trend_data = calculate_trend_score(last5_games, stat_name)
+
+            # Calculate ranking score with all context
+            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
+                prop, player_averages, game_time_utc,
+                lineup_status=lineup_status,
+                hit_rate=hit_rate,
+                trend_data=trend_data
+            )
 
             short_name = stat_name.replace(
                 "Points", "Pts").replace("Rebounds", "Reb")
@@ -1777,6 +1928,14 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "urgencyScore": urgency_score,
                 "recommendedDirection": recommended_direction,
                 "hitRate": {"hits": hit_rate["hits"], "total": hit_rate["total"], "results": hit_rate["results"]},
+                # Trend data
+                "trendData": {
+                    "trend": trend_data.get("trend", "stable"),
+                    "declinePct": trend_data.get("decline_pct", 0),
+                    "surgePct": trend_data.get("surge_pct", 0),
+                    "recentAvg": trend_data.get("recent_avg", 0),
+                    "fullAvg": trend_data.get("full_avg", 0),
+                },
                 "section": "topPicks",
                 "featured": False,
                 "trending": "up",
@@ -1792,7 +1951,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "teamInjuries": team_injuries,
                 "oppInjuries": opp_injuries,
                 "opponentAbbr": opponent_abbr,
-                "lineupStatus": lineup_status,
+                "lineupStatus": lineup_status,  # "STARTING", "GTD", or ""
             }
             all_prop_cards.append(prop_card)
 
@@ -1853,14 +2012,18 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 opponent_abbrev = get_opponent_abbrev(matchup_str, player_team)
                 opp_stats = team_defense_cache.get(opponent_abbrev, {})
 
+                trend_info = card.get("trendData", {})
                 summary = {
                     "player": card["name"],
                     "team": player_team,
                     "stat": card["statNameFull"],
                     "line": card["line"],
                     "player_avg": card["playerAverage"],
+                    "recent_avg": trend_info.get("recentAvg", card["playerAverage"]),
                     "edge_pct": round(((card["playerAverage"] - card["line"]) / card["line"]) * 100, 1) if card["line"] > 0 else 0,
                     "hit_rate": f"{card['hitRate']['hits']}/{card['hitRate']['total']}",
+                    "trend": trend_info.get("trend", "stable"),
+                    "decline_pct": trend_info.get("declinePct", 0),
                     "opponent": opponent_abbrev if opponent_abbrev else matchup_str,
                     "opp_def_rank": opp_stats.get("def_rank"),
                     "opp_pace_rank": opp_stats.get("pace_rank"),
@@ -1882,7 +2045,10 @@ IMPORTANT: The team data provided below is current and accurate. Players may hav
 
 **METRICS REFERENCE:**
 - edge_pct: How much player_avg exceeds line (positive = over edge, negative = under edge)
+- recent_avg: Player's average over last 2 games (compare to player_avg to see trend)
 - hit_rate: Games over line in last 5 (e.g., "4/5" = hit 4 times)
+- trend: "declining" (last 2 games >20% below avg), "surging" (>20% above), or "stable"
+- decline_pct: How much production has dropped in recent games (0 if not declining)
 - opp_def_rank: 1-30 (1=best defense/hardest, 30=worst defense/easiest)
 - opp_pace_rank: 1-30 (1=fastest pace/more possessions, 30=slowest)
 - rest_status: "B2B" = back-to-back game (fatigue risk), "" = normal rest
@@ -1907,15 +2073,19 @@ UNDER signals:
 - opp_def_rank 1-10 = Elite defense (suppresses stats)
 - opp_pace_rank 20-30 = Slow pace (fewer possessions)
 - rest_status = "B2B" = fatigue factor (especially for older players or high-minute guys)
+- trend = "declining" with decline_pct > 25% = production dropping significantly
 
 CAUTION signals:
 - lineup_status = "GTD" = risky, check latest news
 - lineup_status = "OUT" = skip this prop entirely
+- CRITICAL: When trend = "declining" AND teammates are returning from injury, usage is likely dropping. Use recent_avg instead of player_avg for edge assessment.
+- When recent_avg is significantly lower than player_avg (>20% gap), the season average is misleading. Weight recent_avg more heavily.
+- When lineup_status = "" (unknown) AND player_avg < 15 pts (low production), be skeptical - bench players may not play starter minutes.
 
 CONFIDENCE LEVELS:
 - "Strong": 3+ signals align in same direction AND player confirmed to play
 - "Lean": 2 signals align, or edge_pct > 15%
-- "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain
+- "Fade": Signals conflict OR edge_pct between -5% and 5% OR lineup uncertain OR trend is declining with high decline_pct
 
 **OUTPUT (JSON):**
 {{
@@ -1925,7 +2095,7 @@ CONFIDENCE LEVELS:
             "stat": "Points|Rebounds|Assists|3-Pointers Made|Pts + Rebs + Asts",
             "direction": "Over" or "Under",
             "confidence": "Strong" or "Lean" or "Fade",
-            "analysis": "[2-3 sentences citing specific numbers. Mention lineup status and injuries if relevant. End with clear verdict.]"
+            "analysis": "[2-3 sentences citing specific numbers. Mention trend/recent_avg and lineup status if relevant. End with clear verdict.]"
         }}
     ]
 }}"""

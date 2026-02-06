@@ -30,6 +30,16 @@ struct FeedView: View {
                                 Text("Today's player props")
                                     .font(.subheadline)
                                     .foregroundStyle(.gray)
+
+                                if !vm.refreshStatusText.isEmpty {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: vm.isRefreshing ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath")
+                                            .font(.caption2)
+                                        Text(vm.refreshStatusText)
+                                            .font(.caption)
+                                    }
+                                    .foregroundStyle(.gray.opacity(0.7))
+                                }
                             }
                             .padding(.horizontal)
                             .padding(.top, 10)
