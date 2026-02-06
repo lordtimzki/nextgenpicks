@@ -15,7 +15,7 @@ import datetime
 import uuid
 from datetime import timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from retrieve import get_all_team_defense_stats
+from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats
 
 # Note: Firebase is initialized in main.py which imports this module
 
@@ -421,12 +421,13 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   lineup_status: str = "", hit_rate: dict = None,
                                   trend_data: dict = None,
                                   opp_def_rank: int = None,
-                                  opp_pace_rank: int = None) -> tuple:
+                                  opp_pace_rank: int = None,
+                                  player_advanced: dict = None) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score, recommended_direction)
 
-    Formula v3: (edge * 0.35) + (matchup * 0.20) + (hitRate * 0.20) + (star * 0.10) + (odds * 0.15)
+    Formula v4: (edge * 0.35) + (matchup * 0.20) + (hitRate * 0.20) + (efficiency * 0.10) + (odds * 0.15)
     Then apply lineup and trend modifiers.
     """
     stat = prop.get("stat_name", "").lower()
@@ -467,10 +468,8 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
         hit_pct = hit_rate["hits"] / hit_rate["total"]
         hit_rate_score = hit_pct * 10.0  # 5/5 = 10, 0/5 = 0
 
-    # 3. Star Power Score - based on total production
-    total_production = averages.get(
-        "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
-    star_score = min(10.0, total_production / 4.0)
+    # 3. Player Efficiency Score - stat-aware using advanced stats
+    efficiency_score = calculate_player_efficiency_score(stat, player_advanced)
 
     # 4. Urgency Score (returned but not in formula)
     urgency_score = calculate_urgency_score(game_time_utc)
@@ -496,8 +495,8 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     # 6. Matchup Score - direction-aware opponent quality
     matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction)
 
-    # Calculate base total score (v3 weights)
-    total = (edge_score * 0.35) + (matchup_score * 0.20) + (hit_rate_score * 0.20) + (star_score * 0.10) + (odds_score * 0.15)
+    # Calculate base total score (v4 weights)
+    total = (edge_score * 0.35) + (matchup_score * 0.20) + (hit_rate_score * 0.20) + (efficiency_score * 0.10) + (odds_score * 0.15)
 
     # Apply lineup modifiers
     if lineup_status == "GTD":
@@ -550,6 +549,55 @@ def calculate_matchup_score(opp_def_rank: int = None, opp_pace_rank: int = None,
     return round((defense_component * 0.60) + (pace_component * 0.40), 2)
 
 
+def calculate_player_efficiency_score(stat_name: str, player_advanced: dict = None) -> float:
+    """
+    Calculate stat-aware player efficiency score (0-10) using advanced stats.
+    Replaces crude star_score with stat-specific efficiency.
+
+    Points/3PM: USG_PCT (60%) + TS_PCT (40%) — high usage + efficient = high score
+    Rebounds:    REB_PCT — high rebound share = high score
+    Assists:     AST_PCT — high assist share = high score
+    PRA:         Blend: pts(50%) + reb(25%) + ast(25%)
+
+    Returns 5.0 (neutral) if no advanced data available.
+    """
+    if not player_advanced:
+        return 5.0
+
+    def normalize(value, low, high):
+        """Normalize value from [low, high] range to [0, 10]."""
+        clamped = max(low, min(high, value))
+        return ((clamped - low) / (high - low)) * 10.0
+
+    usg = player_advanced.get("usg_pct", 0)
+    ts = player_advanced.get("ts_pct", 0)
+    reb = player_advanced.get("reb_pct", 0)
+    ast = player_advanced.get("ast_pct", 0)
+
+    stat_lower = stat_name.lower()
+
+    if "3-pointer" in stat_lower or "3pm" in stat_lower or "point" in stat_lower or "pts" in stat_lower:
+        # Points / 3PM: usage rate + shooting efficiency
+        usg_score = normalize(usg, 0.10, 0.35)
+        ts_score = normalize(ts, 0.45, 0.70)
+        return round((usg_score * 0.60) + (ts_score * 0.40), 2)
+
+    elif "rebound" in stat_lower or "reb" in stat_lower:
+        return round(normalize(reb, 0.03, 0.20), 2)
+
+    elif "assist" in stat_lower or "ast" in stat_lower:
+        return round(normalize(ast, 0.03, 0.45), 2)
+
+    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        # PRA: weighted blend
+        pts_score = (normalize(usg, 0.10, 0.35) * 0.60) + (normalize(ts, 0.45, 0.70) * 0.40)
+        reb_score = normalize(reb, 0.03, 0.20)
+        ast_score = normalize(ast, 0.03, 0.45)
+        return round((pts_score * 0.50) + (reb_score * 0.25) + (ast_score * 0.25), 2)
+
+    return 5.0
+
+
 def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
                             lineup_status: str = "", last5_games: list = None) -> tuple:
     """
@@ -559,7 +607,7 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
     averages = player_data.get("averages", {"pts": 0, "reb": 0, "ast": 0})
 
     best_score = 0
-    best_components = {"edge": 0, "star": 0, "odds": 0}
+    best_components = {"edge": 0, "efficiency": 0, "odds": 0}
 
     for prop in props:
         stat_name = prop.get("stat_name", "")
@@ -577,11 +625,9 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
         )
         if score > best_score:
             best_score = score
-            total_production = averages.get(
-                "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
             best_components = {
                 "edge": round(min(10.0, max(0.0, (edge / 5.0) * 10.0)), 2),
-                "star": round(min(10.0, total_production / 4.0), 2),
+                "efficiency": round(calculate_player_efficiency_score(stat_name), 2),
                 "odds": 5.0
             }
 
@@ -1107,6 +1153,11 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     team_defense_cache = get_all_team_defense_stats()
     print(f"✓ Cached defense stats for {len(team_defense_cache)} teams")
 
+    # 2.55. Fetch player advanced stats (single API call for all ~500 players)
+    print("📊 Fetching player advanced stats...")
+    player_advanced_cache = get_all_player_advanced_stats()
+    print(f"✓ Cached advanced stats for {len(player_advanced_cache)} players")
+
     # 2.6. Fetch injury reports, back-to-back info, and lineup confirmations
     injuries_cache = get_nba_injuries()
     b2b_cache = get_yesterdays_games()
@@ -1264,6 +1315,9 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     print("📊 Building individual prop cards...")
     all_prop_cards = []
 
+    # Cache per-team context so teammates reuse the same lookups
+    team_context_cache = {}  # team_abbr -> {opponent_abbr, team_injuries, opp_injuries, rest_status, opp_def_stats}
+
     for ep in enriched_players:
         ud_player = ep["underdog_player"]
         ud_props = ep["underdog_props"]
@@ -1324,17 +1378,40 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         if nba_stats:
             last5_games = nba_stats.get("last5Games", [])
 
-        # Get injury and rest data for this player's team and opponent
-        opponent_abbr = get_opponent_abbrev(opponent, team_abbr)
-        team_injuries = get_team_injuries_summary(team_abbr, injuries_cache)
-        opp_injuries = get_team_injuries_summary(opponent_abbr, injuries_cache)
-        rest_status = get_player_rest_status(team_abbr, b2b_cache)
+        # Get team context from cache or compute once per team
+        if team_abbr and team_abbr in team_context_cache:
+            tc = team_context_cache[team_abbr]
+            opponent_abbr = tc["opponent_abbr"]
+            team_injuries = tc["team_injuries"]
+            opp_injuries = tc["opp_injuries"]
+            rest_status = tc["rest_status"]
+        else:
+            opponent_abbr = get_opponent_abbrev(opponent, team_abbr)
+            team_injuries = get_team_injuries_summary(team_abbr, injuries_cache)
+            opp_injuries = get_team_injuries_summary(opponent_abbr, injuries_cache)
+            rest_status = get_player_rest_status(team_abbr, b2b_cache)
+            if team_abbr:
+                team_context_cache[team_abbr] = {
+                    "opponent_abbr": opponent_abbr,
+                    "team_injuries": team_injuries,
+                    "opp_injuries": opp_injuries,
+                    "rest_status": rest_status,
+                }
+
+        # Lineup status is always per-player
         lineup_status = get_player_lineup_status(
             player_name, lineup_cache, injuries_cache, team_abbr)
 
         # Skip OUT players entirely - no prop cards created
         if lineup_status == "OUT":
             continue
+
+        # Look up player advanced stats (type-safe int key)
+        player_adv = None
+        if isinstance(player_id, int):
+            player_adv = player_advanced_cache.get(player_id)
+        elif isinstance(player_id, str) and player_id.isdigit():
+            player_adv = player_advanced_cache.get(int(player_id))
 
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
@@ -1357,7 +1434,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 hit_rate=hit_rate,
                 trend_data=trend_data,
                 opp_def_rank=opp_def_stats.get("def_rank"),
-                opp_pace_rank=opp_def_stats.get("pace_rank")
+                opp_pace_rank=opp_def_stats.get("pace_rank"),
+                player_advanced=player_adv
             )
 
             # Calculate matchup score for prop card (informational)
@@ -1366,6 +1444,9 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 opp_def_stats.get("pace_rank"),
                 recommended_direction
             )
+
+            # Calculate efficiency score for prop card (informational)
+            eff_score = calculate_player_efficiency_score(stat_name, player_adv)
 
             # Format stat name
             short_name = stat_name.replace(
@@ -1413,6 +1494,14 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 "matchupScore": matchup_score,
                 "oppDefRank": opp_def_stats.get("def_rank"),
                 "oppPaceRank": opp_def_stats.get("pace_rank"),
+                # Efficiency data (player advanced stats)
+                "efficiencyScore": eff_score,
+                "playerAdvanced": {
+                    "usgPct": round(player_adv["usg_pct"] * 100, 1) if player_adv else None,
+                    "tsPct": round(player_adv["ts_pct"] * 100, 1) if player_adv else None,
+                    "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
+                    "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
+                } if player_adv else None,
                 # Hit rate data (last 5 games)
                 "hitRate": {
                     "hits": hit_rate["hits"],
@@ -1550,8 +1639,9 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 # Get opponent defense stats from cache
                 opp_stats = team_defense_cache.get(opponent_abbrev, {})
 
-                # Build enriched summary with matchup context + trend data
+                # Build enriched summary with matchup context + trend data + advanced stats
                 trend_info = card.get("trendData", {})
+                adv = card.get("playerAdvanced")
                 summary = {
                     "player": card["name"],
                     "team": player_team,
@@ -1566,6 +1656,11 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     "opponent": opponent_abbrev if opponent_abbrev else matchup_str,
                     "opp_def_rank": opp_stats.get("def_rank"),
                     "opp_pace_rank": opp_stats.get("pace_rank"),
+                    # Player advanced stats
+                    "usg_pct": adv.get("usgPct") if adv else None,
+                    "ts_pct": adv.get("tsPct") if adv else None,
+                    "reb_pct": adv.get("rebPct") if adv else None,
+                    "ast_pct": adv.get("astPct") if adv else None,
                     # Injury and rest data
                     "rest_status": card.get("restStatus", ""),
                     "team_injuries": card.get("teamInjuries", ""),
@@ -1590,6 +1685,10 @@ IMPORTANT: The team data provided below is current and accurate. Players may hav
 - decline_pct: How much production has dropped in recent games (0 if not declining)
 - opp_def_rank: 1-30 (1=best defense/hardest, 30=worst defense/easiest)
 - opp_pace_rank: 1-30 (1=fastest pace/more possessions, 30=slowest)
+- usg_pct: Usage rate % — share of team possessions used while on court (avg ~20%, elite scorers 28-35%)
+- ts_pct: True shooting % — scoring efficiency including FTs and 3s (avg ~56%, elite 62%+)
+- reb_pct: Rebound % — share of available rebounds grabbed (avg ~10%, elite bigs 18-22%)
+- ast_pct: Assist % — share of teammate FGs assisted (avg ~12%, elite playmakers 35-45%)
 - rest_status: "B2B" = back-to-back game (fatigue risk), "" = normal rest
 - lineup_status: "STARTING" = confirmed starter, "GTD" = game-time decision, "OUT" = ruled out
 - team_injuries: Key injuries on player's team (may increase usage if star out)
@@ -1602,6 +1701,9 @@ OVER signals:
 - hit_rate 4/5 or 5/5 = Strong recent form
 - opp_def_rank 20-30 = Weak defense (boost scoring/counting stats)
 - opp_pace_rank 1-10 = Fast pace (more possessions = more stats)
+- For Points/3PM: usg_pct > 28% = high-volume scorer, supports Over
+- For Rebounds: reb_pct > 15% = dominant rebounder, supports Over
+- For Assists: ast_pct > 30% = primary playmaker, supports Over
 - opp_injuries contains key defender OUT = easier matchup
 - team_injuries shows teammate OUT = potential increased usage
 - lineup_status = "STARTING" = confirmed to play
@@ -1611,6 +1713,9 @@ UNDER signals:
 - hit_rate 0/5 or 1/5 = Poor recent form
 - opp_def_rank 1-10 = Elite defense (suppresses stats)
 - opp_pace_rank 20-30 = Slow pace (fewer possessions)
+- For Points/3PM: usg_pct < 18% = low-volume role player, supports Under
+- For Rebounds: reb_pct < 8% = not a natural rebounder, supports Under (even if raw avg looks decent)
+- For Assists: ast_pct < 10% = not a playmaker, supports Under
 - rest_status = "B2B" = fatigue factor (especially for older players or high-minute guys)
 - trend = "declining" with decline_pct > 25% = production dropping significantly
 
@@ -1701,26 +1806,12 @@ CONFIDENCE LEVELS:
                         else:
                             trending = "up"
 
-                        # Apply Gemini confidence modifier to ranking score
-                        pre_ai_score = card["rankingScore"]
-                        if ai_confidence == "Strong":
-                            adjusted_score = round(min(10.0, pre_ai_score * 1.15), 2)
-                        elif ai_confidence == "Fade":
-                            adjusted_score = round(pre_ai_score * 0.65, 2)
-                        else:
-                            adjusted_score = pre_ai_score
-
-                        card["rankingScore"] = adjusted_score
-                        card["preAiRankingScore"] = pre_ai_score
-
                         update_data = {
                             "trending": trending,
                             "ai_analysis": analysis,
                             "aiRecommended": ai_direction,
                             "aiConfidence": ai_confidence,
                             "isFade": ai_confidence == "Fade",
-                            "rankingScore": adjusted_score,
-                            "preAiRankingScore": pre_ai_score,
                         }
 
                         db.collection("props").document(
@@ -1728,7 +1819,7 @@ CONFIDENCE LEVELS:
                         ai_updated_count += 1
                         matched = True
                         print(
-                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction}) score: {pre_ai_score} → {adjusted_score}")
+                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction})")
                         break
 
                 if not matched:
@@ -1737,46 +1828,6 @@ CONFIDENCE LEVELS:
 
             print(
                 f"✓ AI analysis matched {ai_updated_count}/{len(ai_props)} props")
-
-            # Re-sort and re-assign sections after AI score adjustments
-            all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
-
-            new_for_you_count = min(5, len(all_prop_cards))
-            section_updates = {}
-
-            for i, card in enumerate(all_prop_cards):
-                if i < new_for_you_count:
-                    new_section = "forYou"
-                    new_featured = True
-                elif i < 20:
-                    new_section = "topPicks"
-                    new_featured = True
-                else:
-                    new_section = "allProps"
-                    new_featured = False
-
-                old_section = card.get("section", "")
-                if new_section != old_section or card.get("featured") != new_featured:
-                    card["section"] = new_section
-                    card["featured"] = new_featured
-                    if card.get("id"):
-                        section_updates[card["id"]] = {
-                            "section": new_section,
-                            "featured": new_featured,
-                        }
-
-            if section_updates:
-                update_batch = db.batch()
-                batch_count = 0
-                for doc_id, updates in section_updates.items():
-                    update_batch.update(db.collection("props").document(doc_id), updates)
-                    batch_count += 1
-                    if batch_count % 400 == 0:
-                        update_batch.commit()
-                        update_batch = db.batch()
-                if batch_count % 400 != 0:
-                    update_batch.commit()
-                print(f"✓ Re-assigned sections for {len(section_updates)} props after AI adjustments")
 
         except Exception as e:
             print(f"⚠️ Gemini error (props already saved without AI): {e}")
@@ -1832,6 +1883,11 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     print("\n📊 Fetching team defense stats for matchup analysis...")
     team_defense_cache = get_all_team_defense_stats()
     print(f"✓ Cached defense stats for {len(team_defense_cache)} teams")
+
+    # Fetch player advanced stats (single API call for all ~500 players)
+    print("📊 Fetching player advanced stats...")
+    player_advanced_cache = get_all_player_advanced_stats()
+    print(f"✓ Cached advanced stats for {len(player_advanced_cache)} players")
 
     # Fetch injury reports, back-to-back info, and lineup confirmations
     injuries_cache = get_nba_injuries()
@@ -1971,6 +2027,9 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     priority_stats = ["Points", "Rebounds", "Assists",
                       "3-Pointers Made", "Pts + Rebs + Asts"]
 
+    # Cache per-team context so teammates reuse the same lookups
+    team_context_cache = {}
+
     for ep in enriched_players:
         ud_player = ep["underdog_player"]
         ud_props = ep["underdog_props"]
@@ -2018,17 +2077,40 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         # Get last 5 games for hit rate
         last5_games = nba_stats.get("last5Games", []) if nba_stats else []
 
-        # Get injury and rest data for this player's team and opponent
-        opponent_abbr = get_opponent_abbrev(opponent, team_abbr)
-        team_injuries = get_team_injuries_summary(team_abbr, injuries_cache)
-        opp_injuries = get_team_injuries_summary(opponent_abbr, injuries_cache)
-        rest_status = get_player_rest_status(team_abbr, b2b_cache)
+        # Get team context from cache or compute once per team
+        if team_abbr and team_abbr in team_context_cache:
+            tc = team_context_cache[team_abbr]
+            opponent_abbr = tc["opponent_abbr"]
+            team_injuries = tc["team_injuries"]
+            opp_injuries = tc["opp_injuries"]
+            rest_status = tc["rest_status"]
+        else:
+            opponent_abbr = get_opponent_abbrev(opponent, team_abbr)
+            team_injuries = get_team_injuries_summary(team_abbr, injuries_cache)
+            opp_injuries = get_team_injuries_summary(opponent_abbr, injuries_cache)
+            rest_status = get_player_rest_status(team_abbr, b2b_cache)
+            if team_abbr:
+                team_context_cache[team_abbr] = {
+                    "opponent_abbr": opponent_abbr,
+                    "team_injuries": team_injuries,
+                    "opp_injuries": opp_injuries,
+                    "rest_status": rest_status,
+                }
+
+        # Lineup status is always per-player
         lineup_status = get_player_lineup_status(
             player_name, lineup_cache, injuries_cache, team_abbr)
 
         # Skip OUT players entirely - no prop cards created
         if lineup_status == "OUT":
             continue
+
+        # Look up player advanced stats (type-safe int key)
+        player_adv = None
+        if isinstance(player_id, int):
+            player_adv = player_advanced_cache.get(player_id)
+        elif isinstance(player_id, str) and player_id.isdigit():
+            player_adv = player_advanced_cache.get(int(player_id))
 
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
@@ -2050,7 +2132,8 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 hit_rate=hit_rate,
                 trend_data=trend_data,
                 opp_def_rank=opp_def_stats.get("def_rank"),
-                opp_pace_rank=opp_def_stats.get("pace_rank")
+                opp_pace_rank=opp_def_stats.get("pace_rank"),
+                player_advanced=player_adv
             )
 
             # Calculate matchup score for prop card (informational)
@@ -2059,6 +2142,9 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 opp_def_stats.get("pace_rank"),
                 recommended_direction
             )
+
+            # Calculate efficiency score for prop card (informational)
+            eff_score = calculate_player_efficiency_score(stat_name, player_adv)
 
             short_name = stat_name.replace(
                 "Points", "Pts").replace("Rebounds", "Reb")
@@ -2103,6 +2189,14 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "matchupScore": matchup_score,
                 "oppDefRank": opp_def_stats.get("def_rank"),
                 "oppPaceRank": opp_def_stats.get("pace_rank"),
+                # Efficiency data (player advanced stats)
+                "efficiencyScore": eff_score,
+                "playerAdvanced": {
+                    "usgPct": round(player_adv["usg_pct"] * 100, 1) if player_adv else None,
+                    "tsPct": round(player_adv["ts_pct"] * 100, 1) if player_adv else None,
+                    "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
+                    "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
+                } if player_adv else None,
                 "hitRate": {"hits": hit_rate["hits"], "total": hit_rate["total"], "results": hit_rate["results"]},
                 # Trend data
                 "trendData": {
@@ -2189,6 +2283,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 opp_stats = team_defense_cache.get(opponent_abbrev, {})
 
                 trend_info = card.get("trendData", {})
+                adv = card.get("playerAdvanced")
                 summary = {
                     "player": card["name"],
                     "team": player_team,
@@ -2203,6 +2298,11 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                     "opponent": opponent_abbrev if opponent_abbrev else matchup_str,
                     "opp_def_rank": opp_stats.get("def_rank"),
                     "opp_pace_rank": opp_stats.get("pace_rank"),
+                    # Player advanced stats
+                    "usg_pct": adv.get("usgPct") if adv else None,
+                    "ts_pct": adv.get("tsPct") if adv else None,
+                    "reb_pct": adv.get("rebPct") if adv else None,
+                    "ast_pct": adv.get("astPct") if adv else None,
                     # Injury and rest data
                     "rest_status": card.get("restStatus", ""),
                     "team_injuries": card.get("teamInjuries", ""),
@@ -2227,6 +2327,10 @@ IMPORTANT: The team data provided below is current and accurate. Players may hav
 - decline_pct: How much production has dropped in recent games (0 if not declining)
 - opp_def_rank: 1-30 (1=best defense/hardest, 30=worst defense/easiest)
 - opp_pace_rank: 1-30 (1=fastest pace/more possessions, 30=slowest)
+- usg_pct: Usage rate % — share of team possessions used while on court (avg ~20%, elite scorers 28-35%)
+- ts_pct: True shooting % — scoring efficiency including FTs and 3s (avg ~56%, elite 62%+)
+- reb_pct: Rebound % — share of available rebounds grabbed (avg ~10%, elite bigs 18-22%)
+- ast_pct: Assist % — share of teammate FGs assisted (avg ~12%, elite playmakers 35-45%)
 - rest_status: "B2B" = back-to-back game (fatigue risk), "" = normal rest
 - lineup_status: "STARTING" = confirmed starter, "GTD" = game-time decision, "OUT" = ruled out
 - team_injuries: Key injuries on player's team (may increase usage if star out)
@@ -2239,6 +2343,9 @@ OVER signals:
 - hit_rate 4/5 or 5/5 = Strong recent form
 - opp_def_rank 20-30 = Weak defense (boost scoring/counting stats)
 - opp_pace_rank 1-10 = Fast pace (more possessions = more stats)
+- For Points/3PM: usg_pct > 28% = high-volume scorer, supports Over
+- For Rebounds: reb_pct > 15% = dominant rebounder, supports Over
+- For Assists: ast_pct > 30% = primary playmaker, supports Over
 - opp_injuries contains key defender OUT = easier matchup
 - team_injuries shows teammate OUT = potential increased usage
 - lineup_status = "STARTING" = confirmed to play
@@ -2248,6 +2355,9 @@ UNDER signals:
 - hit_rate 0/5 or 1/5 = Poor recent form
 - opp_def_rank 1-10 = Elite defense (suppresses stats)
 - opp_pace_rank 20-30 = Slow pace (fewer possessions)
+- For Points/3PM: usg_pct < 18% = low-volume role player, supports Under
+- For Rebounds: reb_pct < 8% = not a natural rebounder, supports Under (even if raw avg looks decent)
+- For Assists: ast_pct < 10% = not a playmaker, supports Under
 - rest_status = "B2B" = fatigue factor (especially for older players or high-minute guys)
 - trend = "declining" with decline_pct > 25% = production dropping significantly
 
@@ -2334,69 +2444,23 @@ CONFIDENCE LEVELS:
                         else:
                             trending = "up"
 
-                        # Apply Gemini confidence modifier to ranking score
-                        pre_ai_score = card["rankingScore"]
-                        if ai_confidence == "Strong":
-                            adjusted_score = round(min(10.0, pre_ai_score * 1.15), 2)
-                        elif ai_confidence == "Fade":
-                            adjusted_score = round(pre_ai_score * 0.65, 2)
-                        else:
-                            adjusted_score = pre_ai_score
-
-                        card["rankingScore"] = adjusted_score
-                        card["preAiRankingScore"] = pre_ai_score
-
                         update_data = {
                             "trending": trending,
                             "ai_analysis": analysis,
                             "aiRecommended": ai_direction,
                             "aiConfidence": ai_confidence,
                             "isFade": ai_confidence == "Fade",
-                            "rankingScore": adjusted_score,
-                            "preAiRankingScore": pre_ai_score,
                         }
 
                         db.collection("props").document(
                             doc_id).update(update_data)
                         ai_updated_count += 1
                         print(
-                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction}) score: {pre_ai_score} → {adjusted_score}")
+                            f"  ✓ Updated: {card['name']} - {card['statNameFull']} ({ai_confidence} {ai_direction})")
                         break
 
             print(
                 f"✓ AI analysis matched {ai_updated_count}/{len(ai_props)} props")
-
-            # Re-sort and re-assign sections after AI score adjustments
-            all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
-
-            new_for_you_count = min(5, len(all_prop_cards))
-            section_updates = {}
-
-            for i, card in enumerate(all_prop_cards):
-                if i < new_for_you_count:
-                    new_section = "forYou"
-                    new_featured = True
-                elif i < 20:
-                    new_section = "topPicks"
-                    new_featured = True
-                else:
-                    new_section = "allProps"
-                    new_featured = False
-
-                old_section = card.get("section", "")
-                if new_section != old_section or card.get("featured") != new_featured:
-                    card["section"] = new_section
-                    card["featured"] = new_featured
-                    if card.get("id"):
-                        section_updates[card["id"]] = {
-                            "section": new_section,
-                            "featured": new_featured,
-                        }
-
-            if section_updates:
-                for doc_id, updates in section_updates.items():
-                    db.collection("props").document(doc_id).update(updates)
-                print(f"✓ Re-assigned sections for {len(section_updates)} props after AI adjustments")
 
         except Exception as e:
             print(f"⚠️ Gemini error (props already saved without AI): {e}")

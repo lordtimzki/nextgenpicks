@@ -2,7 +2,7 @@ import httpx
 import os
 from dotenv import load_dotenv
 from nba_api.stats.static import players, teams
-from nba_api.stats.endpoints import playergamelog, leaguedashteamstats
+from nba_api.stats.endpoints import playergamelog, leaguedashteamstats, leaguedashplayerstats
 
 load_dotenv()
 
@@ -125,6 +125,39 @@ def get_all_team_defense_stats() -> dict:
 
     except Exception as e:
         print(f"ERROR fetching all team stats: {e}")
+        return {}
+
+
+# Bulk fetch player advanced stats (single API call for all ~500 players)
+def get_all_player_advanced_stats() -> dict:
+    """
+    Fetch advanced stats for all NBA players in one API call.
+    Returns dict keyed by PLAYER_ID (int) with usg_pct, ts_pct, reb_pct, ast_pct.
+    """
+    print("DEBUG: Fetching advanced stats for all NBA players...")
+
+    try:
+        stats = leaguedashplayerstats.LeagueDashPlayerStats(
+            season='2025-26',
+            measure_type_detailed_defense='Advanced'
+        )
+        df = stats.get_data_frames()[0]
+
+        player_stats = {}
+        for _, row in df.iterrows():
+            player_id = int(row['PLAYER_ID'])
+            player_stats[player_id] = {
+                "usg_pct": float(row.get('USG_PCT', 0) or 0),
+                "ts_pct": float(row.get('TS_PCT', 0) or 0),
+                "reb_pct": float(row.get('REB_PCT', 0) or 0),
+                "ast_pct": float(row.get('AST_PCT', 0) or 0),
+            }
+
+        print(f"DEBUG: Fetched advanced stats for {len(player_stats)} players")
+        return player_stats
+
+    except Exception as e:
+        print(f"ERROR fetching player advanced stats: {e}")
         return {}
 
 
