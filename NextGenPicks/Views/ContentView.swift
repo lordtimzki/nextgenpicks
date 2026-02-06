@@ -8,35 +8,9 @@
 import SwiftUI
 
 struct ContentView: View {
-    init() {
-        let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(Color.surface)
-        
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-    }
-    
-    var body: some View {
-        TabView {
-            FeedView()
-                .tabItem {
-                    Label("Feed", systemImage: "house")
-                }
-            
-            SearchView()
-                .tabItem {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
-            
-            Text("Profile")
-                .tabItem {
-                    Label("Profile", systemImage: "person")
-                }
+        var body: some View {
+                FeedView()
         }
-        .tint(.brandEmerald)
-        .preferredColorScheme(.dark)
-    }
 }
 
 #Preview {

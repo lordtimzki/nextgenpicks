@@ -23,10 +23,6 @@ struct FeedView: View {
                             
                             // 1. Header
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Welcome Back")
-                                    .font(.largeTitle)
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(.white)
                                 Text("Today's player props")
                                     .font(.subheadline)
                                     .foregroundStyle(.gray)
