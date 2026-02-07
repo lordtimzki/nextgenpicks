@@ -900,12 +900,14 @@ def get_player_stats_quick(player_name: str) -> dict | None:
         player_id = player['id']
 
         position = "N/A"
+        current_team = ""
         try:
             player_info = commonplayerinfo.CommonPlayerInfo(
                 player_id=player_id)
             info = player_info.get_normalized_dict()['CommonPlayerInfo']
             if info:
                 position = str(info[0].get('POSITION', 'N/A'))
+                current_team = str(info[0].get('TEAM_ABBREVIATION', ''))
         except:
             pass
 
@@ -915,7 +917,9 @@ def get_player_stats_quick(player_name: str) -> dict | None:
             games = log.get_normalized_dict()['PlayerGameLog'][:5]
 
             if games:
-                team_code = str(games[0]['MATCHUP'].split(" ")[0])
+                game_log_team = str(games[0]['MATCHUP'].split(" ")[0])
+                # Prefer CommonPlayerInfo team (updated faster after trades)
+                team_code = current_team if current_team else game_log_team
                 nba_team = teams.find_team_by_abbreviation(team_code)
                 team_name = nba_team['full_name'] if nba_team else "Unknown"
 
@@ -941,6 +945,7 @@ def get_player_stats_quick(player_name: str) -> dict | None:
                     "name": player['full_name'],
                     "position": position,
                     "team_code": team_code,
+                    "current_team": current_team,
                     "team_name": team_name,
                     "image": f"https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png",
                     "averages": {
@@ -958,7 +963,8 @@ def get_player_stats_quick(player_name: str) -> dict | None:
             "id": int(player_id),
             "name": player['full_name'],
             "position": position,
-            "team_code": "",
+            "team_code": current_team,
+            "current_team": current_team,
             "team_name": "",
             "image": f"https://cdn.nba.com/headshots/nba/latest/1040x760/{player_id}.png",
             "averages": {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0},
@@ -1328,6 +1334,16 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         team_abbr_for_lineup = ep.get("underdog_team_abbr", "")
         if nba_stats and nba_stats.get("team_code"):
             team_abbr_for_lineup = nba_stats["team_code"]
+        # Validate team against game (handles traded players)
+        ud_game_for_lineup = ep.get("underdog_game", {})
+        lineup_abbr = ud_game_for_lineup.get("abbreviated_title", "")
+        if team_abbr_for_lineup and lineup_abbr and " @ " in lineup_abbr:
+            away_l, home_l = lineup_abbr.split(" @ ")
+            away_l, home_l = away_l.strip(), home_l.strip()
+            if team_abbr_for_lineup not in (away_l, home_l):
+                ct = nba_stats.get("current_team", "") if nba_stats else ""
+                if ct and ct in (away_l, home_l):
+                    team_abbr_for_lineup = ct
         ep_lineup_status = get_player_lineup_status(
             player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
 
@@ -1393,8 +1409,22 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             if nba_stats and nba_stats.get("image"):
                 image_url = nba_stats["image"]
 
-        # Show full matchup
+        # Validate team_abbr matches the game (handles traded players)
         abbr_title = ud_game.get("abbreviated_title", "")
+        if team_abbr and abbr_title and " @ " in abbr_title:
+            away_t, home_t = abbr_title.split(" @ ")
+            away_t, home_t = away_t.strip(), home_t.strip()
+            if team_abbr not in (away_t, home_t):
+                # Player's team doesn't match the game - likely traded mid-season
+                ct = nba_stats.get("current_team", "") if nba_stats else ""
+                if ct and ct in (away_t, home_t):
+                    print(f"  ⚠️ Trade fix: {player_name} {team_abbr}->{ct} (game: {abbr_title})")
+                    team_abbr = ct
+                else:
+                    print(f"  ⚠️ Cannot resolve team for {player_name} (team={team_abbr}, game={abbr_title})")
+                    team_abbr = away_t
+
+        # Show full matchup
         opponent = abbr_title if abbr_title else ud_game.get(
             "short_title", "TBD")
 
@@ -2053,6 +2083,15 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         team_abbr_for_lineup = ep.get("underdog_team_abbr", "")
         if nba_stats and nba_stats.get("team_code"):
             team_abbr_for_lineup = nba_stats["team_code"]
+        # Validate team against game (handles traded players)
+        lineup_abbr = ud_game.get("abbreviated_title", "")
+        if team_abbr_for_lineup and lineup_abbr and " @ " in lineup_abbr:
+            away_l, home_l = lineup_abbr.split(" @ ")
+            away_l, home_l = away_l.strip(), home_l.strip()
+            if team_abbr_for_lineup not in (away_l, home_l):
+                ct = nba_stats.get("current_team", "") if nba_stats else ""
+                if ct and ct in (away_l, home_l):
+                    team_abbr_for_lineup = ct
         ep_lineup_status = get_player_lineup_status(
             player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
 
@@ -2103,7 +2142,20 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             if nba_stats and nba_stats.get("image"):
                 image_url = nba_stats["image"]
 
+        # Validate team_abbr matches the game (handles traded players)
         abbr_title = ud_game.get("abbreviated_title", "")
+        if team_abbr and abbr_title and " @ " in abbr_title:
+            away_t, home_t = abbr_title.split(" @ ")
+            away_t, home_t = away_t.strip(), home_t.strip()
+            if team_abbr not in (away_t, home_t):
+                ct = nba_stats.get("current_team", "") if nba_stats else ""
+                if ct and ct in (away_t, home_t):
+                    print(f"  ⚠️ Trade fix: {player_name} {team_abbr}->{ct} (game: {abbr_title})")
+                    team_abbr = ct
+                else:
+                    print(f"  ⚠️ Cannot resolve team for {player_name} (team={team_abbr}, game={abbr_title}), using {away_t}")
+                    team_abbr = away_t
+
         opponent = abbr_title if abbr_title else ud_game.get(
             "short_title", "TBD")
 
