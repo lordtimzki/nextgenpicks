@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-httpx
-python-dotenv
-google-genai
-nba-api
-pandas
