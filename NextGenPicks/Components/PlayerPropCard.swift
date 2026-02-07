@@ -904,7 +904,7 @@ struct RankingBreakdownSheet: View {
                 .foregroundStyle(.white)
 
             if let rest = player.restStatus, !rest.isEmpty {
-                contextRow(icon: "bed.double.fill", label: "Rest", value: rest == "B2B" ? "Back-to-Back" : rest)
+                contextRow(icon: "bed.double.fill", label: "Rest", value: formatRestStatus(rest))
             }
             if let injuries = player.teamInjuries, !injuries.isEmpty {
                 contextRow(icon: "cross.case.fill", label: "Team Injuries", value: injuries)
@@ -913,6 +913,16 @@ struct RankingBreakdownSheet: View {
                 contextRow(icon: "cross.case", label: "Opp. Injuries", value: oppInj)
             }
         }
+    }
+
+    private func formatRestStatus(_ rest: String) -> String {
+        if rest == "B2B" {
+            return "Back-to-Back (2nd game — played yesterday)"
+        } else if rest.hasPrefix("B2B vs") {
+            let detail = rest.replacingOccurrences(of: "B2B vs ", with: "")
+            return "Back-to-Back (2nd game — played \(detail) yesterday)"
+        }
+        return rest
     }
 
     private func contextRow(icon: String, label: String, value: String) -> some View {

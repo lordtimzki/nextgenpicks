@@ -14,6 +14,7 @@ import json
 import datetime
 import uuid
 from datetime import timezone
+from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats
 
@@ -90,9 +91,13 @@ def get_yesterdays_games() -> dict:
     """
     print("\n📅 Checking for back-to-back games...")
 
-    yesterday = datetime.datetime.now(
-        timezone.utc) - datetime.timedelta(days=1)
+    # Use Eastern Time (NBA's official timezone) to determine "yesterday"
+    # UTC can be off by a day depending on when the scheduler fires
+    eastern = ZoneInfo("America/New_York")
+    now_eastern = datetime.datetime.now(eastern)
+    yesterday = now_eastern - datetime.timedelta(days=1)
     date_str = yesterday.strftime("%Y%m%d")
+    print(f"  📅 Today (ET): {now_eastern.strftime('%Y-%m-%d %H:%M')}, checking yesterday: {yesterday.strftime('%Y-%m-%d')}")
 
     try:
         with httpx.Client(timeout=15.0) as client:
@@ -303,12 +308,17 @@ def get_team_injuries_summary(team_abbr: str, injuries_by_team: dict) -> str:
 def get_player_rest_status(team_abbr: str, teams_played_yesterday: dict) -> str:
     """
     Get rest status for a player's team.
-    Returns "B2B" for back-to-back, "Rested" for 2+ days rest, or empty string.
+    Returns "B2B" or "B2B vs OPP (W/L)" for back-to-back, or empty string.
     """
     if not team_abbr:
         return ""
 
     if team_abbr in teams_played_yesterday:
+        info = teams_played_yesterday[team_abbr]
+        opp = info.get("opponent", "")
+        result = info.get("result", "")
+        if opp and result:
+            return f"B2B vs {opp} ({result})"
         return "B2B"
 
     return ""
@@ -832,17 +842,61 @@ def get_espn_nba_schedule() -> list:
     return games
 
 
+def _fuzzy_find_player(player_name: str) -> dict | None:
+    """Find an NBA player by name with fuzzy matching fallbacks."""
+    from nba_api.stats.static import players as nba_players_db
+
+    # 1. Exact full name match
+    results = nba_players_db.find_players_by_full_name(player_name)
+    if results:
+        return results[0]
+
+    # 2. Try last name only (handles "Nic" vs "Nicolas" etc.)
+    parts = player_name.strip().split()
+    if len(parts) >= 2:
+        last_name = parts[-1]
+        first_initial = parts[0][0].lower()
+        candidates = nba_players_db.find_players_by_last_name(last_name)
+        # Filter to active players whose first name starts with same letter
+        active = [p for p in candidates if p.get("is_active") and
+                  p["full_name"].split()[0][0].lower() == first_initial]
+        if len(active) == 1:
+            return active[0]
+        # If multiple, try substring match on first name
+        if len(active) > 1:
+            first_name_lower = parts[0].lower()
+            for p in active:
+                p_first = p["full_name"].split()[0].lower()
+                if p_first.startswith(first_name_lower) or first_name_lower.startswith(p_first):
+                    return p
+
+    # 3. Try without suffixes (Jr., III, II, etc.)
+    cleaned = player_name.replace(" Jr.", "").replace(" Sr.", "").replace(" III", "").replace(" II", "").replace(" IV", "").strip()
+    if cleaned != player_name:
+        results = nba_players_db.find_players_by_full_name(cleaned)
+        if results:
+            return results[0]
+
+    # 4. Try with common suffixes added
+    for suffix in [" Jr.", " III", " II"]:
+        results = nba_players_db.find_players_by_full_name(player_name + suffix)
+        if results:
+            return results[0]
+
+    return None
+
+
 def get_player_stats_quick(player_name: str) -> dict | None:
     """Get basic player stats from NBA API including last 5 games for hit rate."""
     try:
         from nba_api.stats.static import players, teams
         from nba_api.stats.endpoints import playergamelog, commonplayerinfo
 
-        nba_players = players.find_players_by_full_name(player_name)
-        if not nba_players:
+        player = _fuzzy_find_player(player_name)
+        if not player:
+            print(f"  ⚠️ No NBA match for: {player_name}")
             return None
 
-        player = nba_players[0]
         player_id = player['id']
 
         position = "N/A"
@@ -1212,25 +1266,18 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             seen_player_ids.add(item["player_id"])
             players_by_odds_value.append(item["player_data"])
 
-    # Enrich players with best odds opportunities (up to 50 for better coverage)
-    MAX_ENRICHED_PLAYERS = 50
-    players_to_enrich = players_by_odds_value[:MAX_ENRICHED_PLAYERS]
-    players_basic_only = players_by_odds_value[MAX_ENRICHED_PLAYERS:]
+    # Enrich ALL players with NBA API stats for accurate edge/ranking calculations
+    players_to_enrich = players_by_odds_value
 
     print(
-        f"  Will enrich {len(players_to_enrich)} players with NBA API (selected by odds value)")
-    print(f"  {len(players_basic_only)} players will have basic data only")
+        f"  Will enrich {len(players_to_enrich)} players with NBA API")
 
     enriched_players = []
 
-    def enrich_player(player_data, fetch_nba_stats=True):
+    def enrich_player(player_data):
         player = player_data["player"]
-        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(
-        )
-
-        nba_stats = None
-        if fetch_nba_stats:
-            nba_stats = get_player_stats_quick(player_name)
+        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
+        nba_stats = get_player_stats_quick(player_name)
 
         return {
             "underdog_player": player,
@@ -1241,9 +1288,9 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             "name": player_name,
         }
 
-    # Enrich top players with NBA API (reduced workers to avoid rate limiting)
+    # Enrich all players with NBA API (4 workers to avoid rate limiting)
     with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(enrich_player, p, True): p["player"].get(
+        futures = {executor.submit(enrich_player, p): p["player"].get(
             "id") for p in players_to_enrich}
         for future in as_completed(futures):
             try:
@@ -1256,13 +1303,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             except Exception as e:
                 print(f"✗ Error: {e}")
 
-    # Add remaining players with basic data only (no NBA API calls)
-    for p in players_basic_only:
-        result = enrich_player(p, fetch_nba_stats=False)
-        enriched_players.append(result)
-
     print(
-        f"\n📊 Processed {len(enriched_players)} total players ({len(players_to_enrich)} enriched)\n")
+        f"\n📊 Processed {len(enriched_players)} total players\n")
 
     # 4. Calculate ranking scores for all players
     print("📊 Calculating ranking scores...")
@@ -1838,6 +1880,16 @@ CONFIDENCE LEVELS:
     print(f"=== Top Picks: {top_picks_count}, For You: {for_you_count} ===")
     print("="*60 + "\n")
 
+    # Write refresh metadata so iOS app knows when data was last updated
+    db.collection("metadata").document("lastRefresh").set({
+        "completedAt": firestore.SERVER_TIMESTAMP,
+        "propsWritten": written_count,
+        "aiAnalyzed": ai_updated_count,
+        "topPicks": top_picks_count,
+        "forYou": for_you_count,
+        "source": "batch_analyze",
+    })
+
     return https_fn.Response(json.dumps({
         "status": "success",
         "message": f"Created {written_count} individual prop cards",
@@ -1942,23 +1994,18 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             seen_player_ids.add(item["player_id"])
             players_by_odds_value.append(item["player_data"])
 
-    # Enrich players with best odds opportunities (up to 50)
-    MAX_ENRICHED_PLAYERS = 50
-    players_to_enrich = players_by_odds_value[:MAX_ENRICHED_PLAYERS]
-    players_basic_only = players_by_odds_value[MAX_ENRICHED_PLAYERS:]
+    # Enrich ALL players with NBA API stats
+    players_to_enrich = players_by_odds_value
 
     print(
-        f"  Will enrich {len(players_to_enrich)} players with NBA API (selected by odds value)")
+        f"  Will enrich {len(players_to_enrich)} players with NBA API")
 
     enriched_players = []
 
-    def enrich_player(player_data, fetch_nba_stats=True):
+    def enrich_player(player_data):
         player = player_data["player"]
-        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(
-        )
-        nba_stats = None
-        if fetch_nba_stats:
-            nba_stats = get_player_stats_quick(player_name)
+        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
+        nba_stats = get_player_stats_quick(player_name)
         return {
             "underdog_player": player,
             "underdog_props": player_data["props"],
@@ -1968,9 +2015,9 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             "name": player_name,
         }
 
-    # Enrich top players with NBA API
+    # Enrich all players with NBA API (4 workers to avoid rate limiting)
     with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(enrich_player, p, True): p["player"].get(
+        futures = {executor.submit(enrich_player, p): p["player"].get(
             "id") for p in players_to_enrich}
         for future in as_completed(futures):
             try:
@@ -1978,13 +2025,10 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 enriched_players.append(result)
                 if result.get("nba_stats"):
                     print(f"✓ Enriched {result['name']}")
+                else:
+                    print(f"○ No NBA data for {result['name']}")
             except Exception as e:
                 print(f"✗ Error: {e}")
-
-    # Add remaining players with basic data only
-    for p in players_basic_only:
-        result = enrich_player(p, fetch_nba_stats=False)
-        enriched_players.append(result)
 
     print(f"\n📊 Processed {len(enriched_players)} total players\n")
 
@@ -2470,3 +2514,13 @@ CONFIDENCE LEVELS:
         f"=== SCHEDULED REFRESH COMPLETE: {len(all_prop_cards)} props, {ai_updated_count} with AI ===")
     print(f"=== Top Picks: {top_picks_count}, For You: {for_you_count} ===")
     print("="*60 + "\n")
+
+    # Write refresh metadata so iOS app knows when data was last updated
+    db.collection("metadata").document("lastRefresh").set({
+        "completedAt": firestore.SERVER_TIMESTAMP,
+        "propsWritten": len(all_prop_cards),
+        "aiAnalyzed": ai_updated_count,
+        "topPicks": top_picks_count,
+        "forYou": for_you_count,
+        "source": "scheduled_refresh",
+    })
