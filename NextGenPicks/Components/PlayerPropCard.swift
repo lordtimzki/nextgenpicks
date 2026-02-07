@@ -5,6 +5,7 @@ struct PlayerPropCard: View {
     @State private var showingMoreMarkets: Bool = false
     @State private var showingPlayerDetail: Bool = false
     @State private var showingAIAnalysis: Bool = false
+    @State private var showingRankingBreakdown: Bool = false
 
     // Computed property to get the recommended direction (from AI or algorithm)
     private var recommendation: String? {
@@ -143,20 +144,22 @@ struct PlayerPropCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
-                    // Ranking Score Badge (if available)
+                    // Ranking Score Badge (clickable for breakdown)
                     if let score = player.rankingScore {
-                        HStack(spacing: 3) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 8))
-                            Text(String(format: "%.1f", score))
-                                .font(.caption2)
-                                .fontWeight(.semibold)
+                        Button(action: { showingRankingBreakdown = true }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 8))
+                                Text(String(format: "%.1f", score))
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.brandPurple.opacity(0.9))
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.brandPurple.opacity(0.9))
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
                 .padding(8)
@@ -334,6 +337,9 @@ struct PlayerPropCard: View {
                     analysis: analysis
                 )
             }
+        }
+        .sheet(isPresented: $showingRankingBreakdown) {
+            RankingBreakdownSheet(player: player)
         }
     }
 }
@@ -574,5 +580,421 @@ struct AIAnalysisSheet: View {
         }
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - Ranking Breakdown Sheet
+
+struct RankingBreakdownSheet: View {
+    let player: PlayerCardData
+    @Environment(\.dismiss) private var dismiss
+
+    // Recompute component scores from stored data to show the math
+    private var edgeScore: Double {
+        guard let edge = player.edge else { return 0 }
+        return min(10.0, max(0.0, (edge / 5.0) * 10.0))
+    }
+
+    private var hitRateScore: Double {
+        guard let hr = player.hitRate, hr.total > 0 else { return 5.0 }
+        return (Double(hr.hits) / Double(hr.total)) * 10.0
+    }
+
+    private var oddsScore: Double {
+        let odds = player.overOdds ?? -110
+        if odds >= 100 { return 10.0 }
+        else if odds >= -105 { return 8.0 }
+        else if odds >= -110 { return 5.0 }
+        else if odds >= -120 { return 3.0 }
+        else { return 2.0 }
+    }
+
+    private var lineupMultiplier: String? {
+        if player.lineupStatus == "GTD" { return "0.4x (Game-Time Decision)" }
+        if player.lineupStatus == "STARTING" { return "1.1x (Confirmed Starter)" }
+        return nil
+    }
+
+    private var trendModifier: String? {
+        guard let td = player.trendData else { return nil }
+        if td.trend == "declining" {
+            let penalty = min(30.0, td.declinePct)
+            return "-\(String(format: "%.0f", penalty))% (Declining)"
+        } else if td.trend == "surging" {
+            return "1.05x (Surging)"
+        }
+        return nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Header with total score
+                    headerSection
+
+                    // Formula
+                    formulaSection
+
+                    Divider().background(Color.border)
+
+                    // Component breakdown
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Components")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+
+                        edgeRow
+                        matchupRow
+                        hitRateRow
+                        efficiencyRow
+                        oddsRow
+                    }
+
+                    // Modifiers
+                    if lineupMultiplier != nil || trendModifier != nil {
+                        Divider().background(Color.border)
+                        modifiersSection
+                    }
+
+                    // Context info
+                    if hasContextInfo {
+                        Divider().background(Color.border)
+                        contextSection
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color.background)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(Color.brandEmerald)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Header
+
+    private var headerSection: some View {
+        HStack(spacing: 12) {
+            // Score circle
+            ZStack {
+                Circle()
+                    .stroke(scoreColor.opacity(0.3), lineWidth: 4)
+                    .frame(width: 56, height: 56)
+                Circle()
+                    .trim(from: 0, to: (player.rankingScore ?? 0) / 10.0)
+                    .stroke(scoreColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .frame(width: 56, height: 56)
+                    .rotationEffect(.degrees(-90))
+                Text(String(format: "%.1f", player.rankingScore ?? 0))
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Ranking Score")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                Text("\(player.name) - \(player.mainProp?.statName ?? "") \(String(format: "%.1f", player.mainProp?.line ?? 0))")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondaryText)
+                if let rec = player.recommendedDirection ?? player.aiRecommended {
+                    HStack(spacing: 4) {
+                        Image(systemName: rec == "Over" ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                            .font(.caption2)
+                        Text("Lean: \(rec)")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(rec == "Over" ? Color.brandEmerald : Color.brandRed)
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    private var scoreColor: Color {
+        let score = player.rankingScore ?? 0
+        if score >= 7 { return .brandEmerald }
+        if score >= 4 { return .brandOrange }
+        return .brandRed
+    }
+
+    // MARK: - Formula
+
+    private var formulaSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Formula (v4)")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.secondaryText)
+            Text("(Edge x 0.35) + (Matchup x 0.20) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
+                .font(.caption2)
+                .foregroundStyle(Color.secondaryText.opacity(0.8))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Component Rows
+
+    private var edgeRow: some View {
+        ComponentRow(
+            icon: "arrow.up.arrow.down",
+            label: "Edge",
+            weight: "35%",
+            score: edgeScore,
+            color: .brandEmerald,
+            details: edgeDetails
+        )
+    }
+
+    private var edgeDetails: String {
+        guard let avg = player.playerAverage, let line = player.mainProp?.line else { return "No data" }
+        let edge = player.edge ?? (avg - line)
+        let sign = edge >= 0 ? "+" : ""
+        return "Avg \(String(format: "%.1f", avg)) vs Line \(String(format: "%.1f", line)) = \(sign)\(String(format: "%.1f", edge)) edge"
+    }
+
+    private var matchupRow: some View {
+        ComponentRow(
+            icon: "shield.lefthalf.filled",
+            label: "Matchup",
+            weight: "20%",
+            score: player.matchupScore ?? 5.0,
+            color: .brandBlue,
+            details: matchupDetails
+        )
+    }
+
+    private var matchupDetails: String {
+        var parts: [String] = []
+        if let defRank = player.oppDefRank {
+            parts.append("Def Rank: #\(defRank)/30")
+        }
+        if let paceRank = player.oppPaceRank {
+            parts.append("Pace Rank: #\(paceRank)/30")
+        }
+        if let opp = player.opponentAbbr, !opp.isEmpty {
+            parts.insert("vs \(opp)", at: 0)
+        }
+        return parts.isEmpty ? "Default (neutral)" : parts.joined(separator: " | ")
+    }
+
+    private var hitRateRow: some View {
+        ComponentRow(
+            icon: "target",
+            label: "Hit Rate",
+            weight: "20%",
+            score: hitRateScore,
+            color: .brandOrange,
+            details: hitRateDetails
+        )
+    }
+
+    private var hitRateDetails: String {
+        guard let hr = player.hitRate, hr.total > 0 else { return "No recent data" }
+        let games = hr.results.map { $0.hit ? "HIT" : "MISS" }.joined(separator: ", ")
+        return "\(hr.hits)/\(hr.total) last games (\(games))"
+    }
+
+    private var efficiencyRow: some View {
+        ComponentRow(
+            icon: "chart.bar.fill",
+            label: "Efficiency",
+            weight: "10%",
+            score: player.efficiencyScore ?? 5.0,
+            color: .brandPurple,
+            details: efficiencyDetails
+        )
+    }
+
+    private var efficiencyDetails: String {
+        guard let adv = player.playerAdvanced else { return "No advanced stats" }
+        var parts: [String] = []
+        if let usg = adv.usgPct { parts.append("USG: \(String(format: "%.1f", usg))%") }
+        if let ts = adv.tsPct { parts.append("TS: \(String(format: "%.1f", ts))%") }
+        if let reb = adv.rebPct { parts.append("REB: \(String(format: "%.1f", reb))%") }
+        if let ast = adv.astPct { parts.append("AST: \(String(format: "%.1f", ast))%") }
+        return parts.isEmpty ? "No advanced stats" : parts.joined(separator: " | ")
+    }
+
+    private var oddsRow: some View {
+        ComponentRow(
+            icon: "dollarsign.circle.fill",
+            label: "Odds Value",
+            weight: "15%",
+            score: oddsScore,
+            color: Color(hex: "eab308"),
+            details: oddsDetails
+        )
+    }
+
+    private var oddsDetails: String {
+        let odds = player.overOdds ?? -110
+        let formatted = odds > 0 ? "+\(odds)" : "\(odds)"
+        let tier: String
+        if odds >= 100 { tier = "Plus Money" }
+        else if odds >= -105 { tier = "Near Even" }
+        else if odds >= -110 { tier = "Standard" }
+        else if odds >= -120 { tier = "Below Avg" }
+        else { tier = "Poor Value" }
+        return "Over odds: \(formatted) (\(tier))"
+    }
+
+    // MARK: - Modifiers
+
+    private var modifiersSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Modifiers Applied")
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundStyle(.white)
+
+            if let lineup = lineupMultiplier {
+                HStack(spacing: 8) {
+                    Image(systemName: player.lineupStatus == "STARTING" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(player.lineupStatus == "STARTING" ? Color.brandEmerald : Color.brandOrange)
+                    Text("Lineup: \(lineup)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let trend = trendModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: player.trendData?.trend == "surging" ? "arrow.up.right" : "arrow.down.right")
+                        .font(.caption)
+                        .foregroundStyle(player.trendData?.trend == "surging" ? Color.brandEmerald : Color.brandRed)
+                    Text("Trend: \(trend)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+        }
+    }
+
+    // MARK: - Context
+
+    private var hasContextInfo: Bool {
+        (player.restStatus != nil && !player.restStatus!.isEmpty) ||
+        (player.teamInjuries != nil && !player.teamInjuries!.isEmpty) ||
+        (player.oppInjuries != nil && !player.oppInjuries!.isEmpty)
+    }
+
+    private var contextSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Context")
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundStyle(.white)
+
+            if let rest = player.restStatus, !rest.isEmpty {
+                contextRow(icon: "bed.double.fill", label: "Rest", value: rest == "B2B" ? "Back-to-Back" : rest)
+            }
+            if let injuries = player.teamInjuries, !injuries.isEmpty {
+                contextRow(icon: "cross.case.fill", label: "Team Injuries", value: injuries)
+            }
+            if let oppInj = player.oppInjuries, !oppInj.isEmpty {
+                contextRow(icon: "cross.case", label: "Opp. Injuries", value: oppInj)
+            }
+        }
+    }
+
+    private func contextRow(icon: String, label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(Color.secondaryText)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+                Text(value)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+// MARK: - Component Row (reusable for breakdown)
+
+private struct ComponentRow: View {
+    let icon: String
+    let label: String
+    let weight: String
+    let score: Double
+    let color: Color
+    let details: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(color)
+                    .frame(width: 16)
+                Text(label)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                Text(weight)
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+                Spacer()
+                Text(String(format: "%.1f", score))
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(scoreColor)
+                Text("/ 10")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+            }
+
+            // Score bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(color.opacity(0.15))
+                        .frame(height: 6)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(color)
+                        .frame(width: geo.size.width * min(1.0, score / 10.0), height: 6)
+                }
+            }
+            .frame(height: 6)
+
+            // Details
+            Text(details)
+                .font(.caption2)
+                .foregroundStyle(Color.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var scoreColor: Color {
+        if score >= 7 { return .brandEmerald }
+        if score >= 4 { return .brandOrange }
+        return .brandRed
     }
 }

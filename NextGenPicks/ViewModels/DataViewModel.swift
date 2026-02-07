@@ -6,9 +6,9 @@ import Combine
 class DataViewModel: ObservableObject {
 
     @Published var games: [Game] = []
-    @Published var featuredProps: [PlayerCardData] = []  // Top picks section
-    @Published var forYouProps: [PlayerCardData] = []    // For You section
-    @Published var allProps: [PlayerCardData] = []       // All props for search
+    @Published var featuredProps: [PlayerCardData] = [] 
+    @Published var forYouProps: [PlayerCardData] = []   
+    @Published var allProps: [PlayerCardData] = []       
     @Published var searchResults: [PlayerCardData] = []
     @Published var isLoading: Bool = false
     @Published var isSearchLoading: Bool = false

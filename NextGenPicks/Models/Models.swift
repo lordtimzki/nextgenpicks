@@ -218,6 +218,39 @@ struct TrendData: Codable {
     }
 }
 
+struct PlayerAdvanced: Codable {
+    let usgPct: Double?
+    let tsPct: Double?
+    let rebPct: Double?
+    let astPct: Double?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let d = try? container.decode(Double.self, forKey: .usgPct) { self.usgPct = d }
+        else if let i = try? container.decode(Int.self, forKey: .usgPct) { self.usgPct = Double(i) }
+        else { self.usgPct = nil }
+
+        if let d = try? container.decode(Double.self, forKey: .tsPct) { self.tsPct = d }
+        else if let i = try? container.decode(Int.self, forKey: .tsPct) { self.tsPct = Double(i) }
+        else { self.tsPct = nil }
+
+        if let d = try? container.decode(Double.self, forKey: .rebPct) { self.rebPct = d }
+        else if let i = try? container.decode(Int.self, forKey: .rebPct) { self.rebPct = Double(i) }
+        else { self.rebPct = nil }
+
+        if let d = try? container.decode(Double.self, forKey: .astPct) { self.astPct = d }
+        else if let i = try? container.decode(Int.self, forKey: .astPct) { self.astPct = Double(i) }
+        else { self.astPct = nil }
+    }
+
+    init(usgPct: Double?, tsPct: Double?, rebPct: Double?, astPct: Double?) {
+        self.usgPct = usgPct
+        self.tsPct = tsPct
+        self.rebPct = rebPct
+        self.astPct = astPct
+    }
+}
+
 struct PlayerCardData: Identifiable, Codable {
     let id: String  // Changed to String to support both NBA API int IDs and Underdog UUIDs
     let name: String
@@ -261,6 +294,17 @@ struct PlayerCardData: Identifiable, Codable {
     var lineupStatus: String?  // "STARTING", "GTD", or ""
     var trendData: TrendData?
 
+    // Ranking breakdown fields
+    var matchupScore: Double?
+    var oppDefRank: Int?
+    var oppPaceRank: Int?
+    var efficiencyScore: Double?
+    var playerAdvanced: PlayerAdvanced?
+    var restStatus: String?
+    var teamInjuries: String?
+    var oppInjuries: String?
+    var opponentAbbr: String?
+
     // Computed property: get the main prop (either from single prop fields or first of array)
     var mainProp: PlayerProp? {
         // If we have single prop fields, create a PlayerProp from them
@@ -290,7 +334,10 @@ struct PlayerCardData: Identifiable, Codable {
          statName: String? = nil, statNameFull: String? = nil, line: Double? = nil,
          overOdds: Int? = nil, underOdds: Int? = nil, propId: String? = nil,
          edge: Double? = nil, playerAverage: Double? = nil, urgencyScore: Double? = nil,
-         section: PropSection? = nil, player_id: String? = nil, recommendedDirection: String? = nil) {
+         section: PropSection? = nil, player_id: String? = nil, recommendedDirection: String? = nil,
+         matchupScore: Double? = nil, oppDefRank: Int? = nil, oppPaceRank: Int? = nil,
+         efficiencyScore: Double? = nil, playerAdvanced: PlayerAdvanced? = nil,
+         restStatus: String? = nil, teamInjuries: String? = nil, oppInjuries: String? = nil, opponentAbbr: String? = nil) {
         // Accept Int or String for id
         if let intId = id as? Int {
             self.id = String(intId)
@@ -332,6 +379,15 @@ struct PlayerCardData: Identifiable, Codable {
         self.section = section
         self.player_id = player_id
         self.recommendedDirection = recommendedDirection
+        self.matchupScore = matchupScore
+        self.oppDefRank = oppDefRank
+        self.oppPaceRank = oppPaceRank
+        self.efficiencyScore = efficiencyScore
+        self.playerAdvanced = playerAdvanced
+        self.restStatus = restStatus
+        self.teamInjuries = teamInjuries
+        self.oppInjuries = oppInjuries
+        self.opponentAbbr = opponentAbbr
     }
 
     // Custom decoder to handle id being either Int or String in Firebase
@@ -427,5 +483,23 @@ struct PlayerCardData: Identifiable, Codable {
         self.isFade = try container.decodeIfPresent(Bool.self, forKey: .isFade)
         self.lineupStatus = try container.decodeIfPresent(String.self, forKey: .lineupStatus)
         self.trendData = try container.decodeIfPresent(TrendData.self, forKey: .trendData)
+
+        // Ranking breakdown fields
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .matchupScore) { self.matchupScore = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .matchupScore) { self.matchupScore = Double(i) }
+        else { self.matchupScore = nil }
+
+        self.oppDefRank = try container.decodeIfPresent(Int.self, forKey: .oppDefRank)
+        self.oppPaceRank = try container.decodeIfPresent(Int.self, forKey: .oppPaceRank)
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .efficiencyScore) { self.efficiencyScore = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .efficiencyScore) { self.efficiencyScore = Double(i) }
+        else { self.efficiencyScore = nil }
+
+        self.playerAdvanced = try container.decodeIfPresent(PlayerAdvanced.self, forKey: .playerAdvanced)
+        self.restStatus = try container.decodeIfPresent(String.self, forKey: .restStatus)
+        self.teamInjuries = try container.decodeIfPresent(String.self, forKey: .teamInjuries)
+        self.oppInjuries = try container.decodeIfPresent(String.self, forKey: .oppInjuries)
+        self.opponentAbbr = try container.decodeIfPresent(String.self, forKey: .opponentAbbr)
     }
 }
