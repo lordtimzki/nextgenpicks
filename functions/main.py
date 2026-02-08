@@ -3,13 +3,13 @@ from firebase_admin import initialize_app, firestore
 import json
 import datetime
 import uuid
-from retrieve import get_player_data, get_team_stats, get_odds_and_matchup
+from retrieve import get_player_data, get_team_stats
 from batch_analyze import batch_analyze, scheduled_refresh  # Import both for Firebase discovery
 
 # Initialize Firebase Admin
 initialize_app()
 
-@https_fn.on_request(secrets=["ODDS_API_KEY"], timeout_sec=120)
+@https_fn.on_request(timeout_sec=120)
 def analyze_player(req: https_fn.Request) -> https_fn.Response:
     """
     HTTP Cloud Function to analyze a player.
@@ -25,9 +25,9 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
         if not player_data:
             return https_fn.Response(f"Player '{player_name}' not found", status=404)
         
-        # 2. Betting Odds
-        odds_data = get_odds_and_matchup(player_data["name"])
-        
+        # 2. Betting Odds (Odds API removed - legacy endpoint)
+        odds_data = {"game_info": None, "props": []}
+
         # 3. Opponent Analysis
         opponent_name = "Unknown"
         opponent_stats = None

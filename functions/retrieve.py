@@ -1,12 +1,5 @@
-import httpx
-import os
-from dotenv import load_dotenv
 from nba_api.stats.static import players, teams
 from nba_api.stats.endpoints import playergamelog, leaguedashteamstats, leaguedashplayerstats
-
-load_dotenv()
-
-ODDS_KEY = os.getenv("ODDS_API_KEY")
 
 # Get player data using nba api
 async def get_player_data(player_name):
@@ -103,13 +96,9 @@ def get_all_team_defense_stats() -> dict:
         team_stats = {}
         for _, row in df.iterrows():
             team_name = row['TEAM_NAME']
-            team_abbrev = row.get('TEAM_ABBREVIATION', '')
-
-            # If no abbreviation in data, try to look it up
-            if not team_abbrev:
-                nba_team = teams.find_teams_by_full_name(team_name)
-                if nba_team:
-                    team_abbrev = nba_team[0].get('abbreviation', '')
+            team_id = int(row['TEAM_ID'])
+            nba_team = teams.find_team_name_by_id(team_id)
+            team_abbrev = nba_team['abbreviation'] if nba_team else ''
 
             if team_abbrev:
                 team_stats[team_abbrev] = {
@@ -120,6 +109,8 @@ def get_all_team_defense_stats() -> dict:
                     "pace_rank": int(row['PACE_RANK'])
                 }
 
+        if len(team_stats) < 30:
+            print(f"WARNING: Only {len(team_stats)} teams cached, expected 30")
         print(f"DEBUG: Fetched defense stats for {len(team_stats)} teams")
         return team_stats
 
@@ -197,76 +188,3 @@ async def get_team_stats(team_name: str):
         print(f"ERROR fetching team stats: {e}")
     
     return None
-
-
-# Get odds with odds api
-async def get_odds_and_matchup(player_name: str):
-    print(f"DEBUG: Finding odds for {player_name}...")
-    
-    if not ODDS_KEY:
-        print("ERROR: Missing ODDS_API_KEY")
-        return {"game_info": None, "props": []}
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            odds_resp = await client.get(
-                "https://api.the-odds-api.com/v4/sports/basketball_nba/events",
-                params={"apiKey": ODDS_KEY, "regions": "us"}
-            )
-            odds_resp.raise_for_status()
-            events = odds_resp.json()
-        except Exception as e:
-            print(f"ERROR fetching events: {e}")
-            return {"game_info": None, "props": []}
-        
-        found_props = []
-        game_info = None
-
-        # Limit to 5 events to save API calls
-        for event in events[:5]:
-            game_id = event["id"]
-            
-            try:
-                props_resp = await client.get(
-                    f"https://api.the-odds-api.com/v4/sports/basketball_nba/events/{game_id}/odds",
-                    params={
-                        "apiKey": ODDS_KEY,
-                        "regions": "us",
-                        "markets": "player_points,player_assists,player_rebounds",
-                        "oddsFormat": "american"
-                    }
-                )
-                props_resp.raise_for_status()
-                data = props_resp.json()
-            except Exception as e:
-                print(f"ERROR fetching props for game {game_id}: {e}")
-                continue
-            
-            player_found_in_game = False
-            
-            if "bookmakers" in data:
-                for bookie in data["bookmakers"]:
-                    for market in bookie["markets"]:
-                        for outcome in market["outcomes"]:
-                            if player_name.lower() in outcome["description"].lower():
-                                player_found_in_game = True
-                                found_props.append({
-                                    "book": str(bookie["title"]),
-                                    "market": str(market["key"]),
-                                    "line": float(outcome["point"]),
-                                    "type": str(outcome["name"]),
-                                    "odds": int(outcome["price"])
-                                })
-            
-            if player_found_in_game:
-                game_info = {
-                    "home": str(event["home_team"]),
-                    "away": str(event["away_team"]),
-                    "start": str(event["commence_time"])
-                }
-                break  # Found the player's game, stop searching
-
-        return {
-            "game_info": game_info,
-            "props": found_props
-        }

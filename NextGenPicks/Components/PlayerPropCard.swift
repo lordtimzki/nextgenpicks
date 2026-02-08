@@ -164,8 +164,7 @@ struct PlayerPropCard: View {
                 
                 // Player Name (Bottom Left)
                 Text(player.name)
-                    .font(.headline)
-                    .fontWeight(.bold)
+                    .font(.system(size: 16, weight:. bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .padding(12)

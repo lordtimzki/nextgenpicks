@@ -101,9 +101,9 @@ struct FeedView: View {
                             }
                             .padding(.horizontal)
 
-                            // 4. Top Picks Section (highest ranked props)
+                            // 4. Picks Section (sorted first by ranked props)
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Top Picks")
+                                Text("Picks")
                                     .font(.title3)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
