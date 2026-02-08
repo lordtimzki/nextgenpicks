@@ -368,8 +368,7 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
             "opponent": opponent,
             "gameTime": game_time,
             "gameTimeUTC": game_time_utc,  # ISO timestamp for local time conversion
-            "trending": "up",  # Default, can be updated by AI
-            "ai_analysis": "",  # To be filled by Gemini
+            "trending": "up",
             "source": "underdog",
             "last_updated": datetime.datetime.now(timezone.utc).isoformat(),
         }

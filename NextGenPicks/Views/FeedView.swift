@@ -29,12 +29,12 @@ struct FeedView: View {
 
                                 if !vm.refreshStatusText.isEmpty {
                                     HStack(spacing: 4) {
-                                        Image(systemName: vm.isRefreshing ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath")
+                                        Image(systemName: vm.refreshComplete ? "checkmark.circle.fill" : (vm.isRefreshing ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath"))
                                             .font(.caption2)
                                         Text(vm.refreshStatusText)
                                             .font(.caption)
                                     }
-                                    .foregroundStyle(.gray.opacity(0.7))
+                                    .foregroundStyle(vm.refreshComplete ? Color.brandEmerald.opacity(0.8) : .gray.opacity(0.7))
                                 }
                             }
                             .padding(.horizontal)
