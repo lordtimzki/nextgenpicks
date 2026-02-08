@@ -139,4 +139,29 @@ class FirebaseService: DataService {
         print("🔍 FirebaseService: Found \(results.count) players matching '\(query)'")
         return results
     }
+    /// Personalization Methods
+
+    /// Saves the UserSettings model to a specific user's config document
+    func saveUserSettings(userId: String, settings: UserSettings) async throws {
+        print("🔥 FirebaseService: Saving settings for user \(userId)...")
+        
+        let docRef = db.collection("users").document(userId)
+            .collection("config").document("settings")
+        
+        // Converts the Swift UserSettings struct into a Firestore dictionary
+        try docRef.setData(from: settings)
+    }
+
+    /// Retrieves the UserSettings model for a specific user
+    func fetchUserSettings(userId: String) async throws -> UserSettings? {
+        print("🔥 FirebaseService: Fetching settings for user \(userId)...")
+        
+        let docRef = db.collection("users").document(userId)
+            .collection("config").document("settings")
+        
+        let snapshot = try await docRef.getDocument()
+        
+        // Returns nil if the user hasn't set preferences yet
+        return try? snapshot.data(as: UserSettings.self)
+    }
 }
