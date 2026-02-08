@@ -55,7 +55,7 @@ struct FeedView: View {
                                         HStack(spacing: 4) {
                                             Image(systemName: "star.fill")
                                                 .font(.caption)
-                                            Text("Top 5 Legs")
+                                            Text("Recommended")
                                                 .font(.caption)
                                         }
                                         .foregroundStyle(Color.brandOrange)
@@ -63,7 +63,7 @@ struct FeedView: View {
                                     .padding(.horizontal)
 
                                     LazyVGrid(columns: columns, spacing: 12) {
-                                        ForEach(Array(vm.forYouProps.prefix(5))) { prop in
+                                        ForEach(Array(vm.forYouProps.prefix(4))) { prop in
                                             PlayerPropCard(player: prop)
                                         }
                                     }
