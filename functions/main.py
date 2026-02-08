@@ -1,8 +1,5 @@
 from firebase_functions import https_fn
 from firebase_admin import initialize_app, firestore
-from google import genai
-from google.genai.errors import ClientError
-import os
 import json
 import datetime
 import uuid
@@ -12,7 +9,7 @@ from batch_analyze import batch_analyze, scheduled_refresh  # Import both for Fi
 # Initialize Firebase Admin
 initialize_app()
 
-@https_fn.on_request(secrets=["GOOGLE_API_KEY", "ODDS_API_KEY"], timeout_sec=120)
+@https_fn.on_request(secrets=["ODDS_API_KEY"], timeout_sec=120)
 def analyze_player(req: https_fn.Request) -> https_fn.Response:
     """
     HTTP Cloud Function to analyze a player.
@@ -79,76 +76,7 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
                     "book": prop['book']
                 })
 
-    # 5. Gemini Analysis
-        google_api_key = os.getenv("GOOGLE_API_KEY")
-        if not google_api_key:
-             return https_fn.Response("Server configuration error: GOOGLE_API_KEY missing", status=500)
-
-        client = genai.Client(api_key=google_api_key)
-        
-        prompt = f"""
-        Act as a professional NBA handicapper analyzing ALL available prop bets for this player.
-
-        **PLAYER:** {player_data['name']} ({player_data['team_code']})
-        **OPPONENT:** {opponent_name}
-        **DAYS REST:** {days_rest}
-
-        **PLAYER AVERAGES (Last 10 Games):**
-        - Points: {player_data['averages']['pts']}
-        - Rebounds: {player_data['averages']['reb']}
-        - Assists: {player_data['averages']['ast']}
-
-        **OPPONENT DEFENSIVE PROFILE:**
-        {f"- Defense Rating: {opponent_stats['def_rating']} (Rank #{opponent_stats['def_rank']})" if opponent_stats else "- Defense: Not Available"}
-        {f"- Pace: {opponent_stats['pace']} (Rank #{opponent_stats['pace_rank']})" if opponent_stats else "- Pace: Not Available"}
-        
-        **RECENT GAME LOG (Last 5 Games):**
-        {json.dumps(player_data['last_10_games'][:5], indent=2)}
-
-        **AVAILABLE PROP BETS TO ANALYZE:**
-        {json.dumps(formatted_props, indent=2) if formatted_props else "No props available"}
-
-        **YOUR TASK:**
-        1. Analyze EACH available prop bet individually
-        2. Rank all props by value/edge
-        3. Identify your TOP RECOMMENDED play
-
-        **OUTPUT FORMAT (VALID JSON ONLY):**
-        {{
-        "top_pick": {{
-            "prop": "Over 25.5 Points",
-            "action": "BET",
-            "confidence": "68%",
-            "reasoning": "Explanation here"
-        }},
-        "all_props_ranked": [
-            {{
-            "prop": "Over 25.5 Points",
-            "action": "BET",
-            "confidence": "68%",
-            "value_score": "8/10",
-            "analysis": "Analysis here"
-            }}
-        ],
-        "summary": "Overall advice"
-        }}
-        """
-        
-        ai_analysis = None
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "temperature": 0.3
-                }
-            )
-            ai_analysis = json.loads(response.text)
-        except Exception as e:
-            ai_analysis = {"error": str(e)}
-
-            # 6. Construct Final Result (Legacy structure for reference/debugging)
+        # 5. Construct Final Result (Legacy structure for reference/debugging)
         result = {
             "player": {
                 "name": player_data["name"],
@@ -169,7 +97,6 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
                 "available": formatted_props,
                 "count": len(formatted_props)
             },
-            "ai_analysis": ai_analysis,
             "last_updated": datetime.datetime.now().isoformat()
         }
 
@@ -206,17 +133,7 @@ def analyze_player(req: https_fn.Request) -> https_fn.Response:
         
         ios_props = list(grouped_props.values())
         
-        # Determine Trending based on AI confidence
-        trending = "up" # default
-        confidence_score = 0
-        if ai_analysis and "top_pick" in ai_analysis and "confidence" in ai_analysis["top_pick"]:
-            conf_str = ai_analysis["top_pick"]["confidence"].replace('%', '')
-            try:
-                confidence_score = int(conf_str)
-                if confidence_score >= 75:
-                    trending = "hot"
-            except:
-                pass
+        trending = "up"
 
         # Game Start Time
         game_time = "Scheduled"

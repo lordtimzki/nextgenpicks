@@ -278,9 +278,7 @@ struct PlayerCardData: Identifiable, Codable {
     var player_id: String?
     var recommendedDirection: String?  // "Over" or "Under" based on player avg vs line
 
-    // Optional fields from the new Underdog data source
-    var ai_analysis: String?
-    var aiRecommended: String?
+    // Optional fields from the Underdog data source
     var source: String?
     var last_updated: String?
     var gameTimeUTC: String?  // ISO timestamp for local time conversion
@@ -329,7 +327,7 @@ struct PlayerCardData: Identifiable, Codable {
     // Regular initializer for programmatic creation (mocks, previews)
     init(id: Any, name: String, teamAbbr: String, position: String, imageName: String,
          props: [PlayerProp]? = nil, opponent: String, gameTime: String, trending: TrendingStatus,
-         ai_analysis: String? = nil, aiRecommended: String? = nil, source: String? = nil, last_updated: String? = nil, gameTimeUTC: String? = nil,
+         source: String? = nil, last_updated: String? = nil, gameTimeUTC: String? = nil,
          featured: Bool? = nil, rankingScore: Double? = nil, playerAverages: PlayerAverages? = nil, hitRate: HitRate? = nil, isFade: Bool? = nil, lineupStatus: String? = nil, trendData: TrendData? = nil,
          statName: String? = nil, statNameFull: String? = nil, line: Double? = nil,
          overOdds: Int? = nil, underOdds: Int? = nil, propId: String? = nil,
@@ -354,8 +352,6 @@ struct PlayerCardData: Identifiable, Codable {
         self.opponent = opponent
         self.gameTime = gameTime
         self.trending = trending
-        self.ai_analysis = ai_analysis
-        self.aiRecommended = aiRecommended
         self.source = source
         self.last_updated = last_updated
         self.gameTimeUTC = gameTimeUTC
@@ -462,8 +458,6 @@ struct PlayerCardData: Identifiable, Codable {
         }
 
         // Optional metadata fields
-        self.ai_analysis = try container.decodeIfPresent(String.self, forKey: .ai_analysis)
-        self.aiRecommended = try container.decodeIfPresent(String.self, forKey: .aiRecommended)
         self.source = try container.decodeIfPresent(String.self, forKey: .source)
         self.last_updated = try container.decodeIfPresent(String.self, forKey: .last_updated)
         self.gameTimeUTC = try container.decodeIfPresent(String.self, forKey: .gameTimeUTC)

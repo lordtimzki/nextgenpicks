@@ -4,13 +4,10 @@ struct PlayerPropCard: View {
     let player: PlayerCardData
     @State private var showingMoreMarkets: Bool = false
     @State private var showingPlayerDetail: Bool = false
-    @State private var showingAIAnalysis: Bool = false
     @State private var showingRankingBreakdown: Bool = false
 
-    // Computed property to get the recommended direction (from AI or algorithm)
     private var recommendation: String? {
-        // Prefer AI recommendation, fall back to algorithmic recommendation
-        player.aiRecommended ?? player.recommendedDirection
+        player.recommendedDirection
     }
 
     // Convert UTC time to user's local timezone with day of week
@@ -288,17 +285,13 @@ struct PlayerPropCard: View {
                             label: "Over",
                             odds: mainProp.overOdds,
                             color: .brandEmerald,
-                            isRecommended: recommendation == "Over",
-                            hasAIAnalysis: recommendation == "Over" && player.ai_analysis != nil && !player.ai_analysis!.isEmpty,
-                            onAITap: { showingAIAnalysis = true }
+                            isRecommended: recommendation == "Over"
                         )
                         PropButton(
                             label: "Under",
                             odds: mainProp.underOdds,
                             color: .brandRed,
-                            isRecommended: recommendation == "Under",
-                            hasAIAnalysis: recommendation == "Under" && player.ai_analysis != nil && !player.ai_analysis!.isEmpty,
-                            onAITap: { showingAIAnalysis = true }
+                            isRecommended: recommendation == "Under"
                         )
                     }
                 }
@@ -326,17 +319,6 @@ struct PlayerPropCard: View {
         )
         .sheet(isPresented: $showingMoreMarkets) {
             MoreMarketsSheet(player: player)
-        }
-        .sheet(isPresented: $showingAIAnalysis) {
-            if let analysis = player.ai_analysis, !analysis.isEmpty {
-                AIAnalysisSheet(
-                    playerName: player.name,
-                    statName: player.mainProp?.statName ?? "",
-                    line: player.mainProp?.line ?? 0,
-                    recommendation: recommendation,
-                    analysis: analysis
-                )
-            }
         }
         .sheet(isPresented: $showingRankingBreakdown) {
             RankingBreakdownSheet(player: player)
@@ -459,127 +441,36 @@ struct PropButton: View {
     let color: Color
     var size: ButtonSize = .regular
     var isRecommended: Bool = false
-    var hasAIAnalysis: Bool = false
-    var onAITap: (() -> Void)? = nil
 
     enum ButtonSize {
         case regular, small
     }
 
     var body: some View {
-        Button(action: {
-            if hasAIAnalysis, let tap = onAITap {
-                tap()
-            }
-        }) {
-            VStack(spacing: 2) {
-                HStack(spacing: 3) {
-                    if isRecommended {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(color)
-                    }
-                    Text(label)
-                        .font(.caption2)
-                        .foregroundStyle(isRecommended ? color : .gray)
-
-                    // AI Analysis indicator on the recommended button
-                    if hasAIAnalysis {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 9))
-                            .foregroundStyle(Color.brandPurple)
-                    }
+        VStack(spacing: 2) {
+            HStack(spacing: 3) {
+                if isRecommended {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(color)
                 }
-                Text(odds > 0 ? "+\(odds)" : "\(odds)")
-                    .font(size == .regular ? .subheadline : .caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(color)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, size == .regular ? 8 : 4)
-            .background(color.opacity(isRecommended ? 0.2 : 0.1))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(color.opacity(isRecommended ? 0.6 : 0.3), lineWidth: isRecommended ? 2 : 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-    }
-}
-
-// AI Analysis Sheet
-struct AIAnalysisSheet: View {
-    let playerName: String
-    let statName: String
-    let line: Double
-    let recommendation: String?
-    let analysis: String
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 20) {
-                // Header
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sparkles")
-                            .font(.title2)
-                            .foregroundStyle(Color.brandPurple)
-                        Text("AI Analysis")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundStyle(.white)
-                    }
-
-                    Text("\(playerName) - \(statName) \(String(format: "%.1f", line))")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.secondaryText)
-                }
-
-                // Recommendation badge
-                if let rec = recommendation {
-                    HStack(spacing: 6) {
-                        Image(systemName: rec == "Over" ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                            .font(.body)
-                        Text("Recommended: \(rec)")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
-                    .foregroundStyle(rec == "Over" ? Color.brandEmerald : Color.brandRed)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background((rec == "Over" ? Color.brandEmerald : Color.brandRed).opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-
-                // Analysis text
-                Text(analysis)
-                    .font(.body)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineSpacing(4)
-
-                Spacer()
-
-                // Disclaimer
-                Text("AI analysis is for informational purposes only. Always do your own research.")
+                Text(label)
                     .font(.caption2)
-                    .foregroundStyle(Color.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(isRecommended ? color : .gray)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.background)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(Color.brandEmerald)
-                }
-            }
+            Text(odds > 0 ? "+\(odds)" : "\(odds)")
+                .font(size == .regular ? .subheadline : .caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
         }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, size == .regular ? 8 : 4)
+        .background(color.opacity(isRecommended ? 0.2 : 0.1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(color.opacity(isRecommended ? 0.6 : 0.3), lineWidth: isRecommended ? 2 : 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -707,7 +598,7 @@ struct RankingBreakdownSheet: View {
                 Text("\(player.name) - \(player.mainProp?.statName ?? "") \(String(format: "%.1f", player.mainProp?.line ?? 0))")
                     .font(.caption)
                     .foregroundStyle(Color.secondaryText)
-                if let rec = player.recommendedDirection ?? player.aiRecommended {
+                if let rec = player.recommendedDirection {
                     HStack(spacing: 4) {
                         Image(systemName: rec == "Over" ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                             .font(.caption2)
