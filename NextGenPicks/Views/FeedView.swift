@@ -19,6 +19,7 @@ struct FeedView: View {
                         .tint(.white)
                 } else {
                     ScrollView {
+
                         VStack(alignment: .leading, spacing: 24) {
                             
                             // 1. Header
@@ -117,6 +118,9 @@ struct FeedView: View {
                             }
                         }
                         .padding(.bottom, 20)
+                    }
+                    .refreshable {
+                        await vm.loadInitialData()
                     }
                 }
             }
