@@ -507,8 +507,11 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
         elif trend == "surging":
             total = min(10.0, total * 1.05)
 
-    # Apply home/away modifier (0.92 - 1.08)
+    # Apply home/away modifier (0.92 - 1.08), direction-aware
     ha_modifier = calculate_home_away_modifier(game_log or [], stat, is_home)
+    # Flip for Under: if player performs better at venue (1.08), that hurts Under → 0.92
+    if recommended_direction == "Under":
+        ha_modifier = max(0.92, min(1.08, 2.0 - ha_modifier))
     total *= ha_modifier
 
     # Apply minutes confidence modifier (0.93 - 1.05)
