@@ -482,16 +482,22 @@ struct RankingBreakdownSheet: View {
     // Recompute component scores from stored data to show the math
     private var edgeScore: Double {
         guard let edge = player.edge else { return 0 }
-        return min(10.0, max(0.0, (edge / 5.0) * 10.0))
+        return min(10.0, (abs(edge) / 5.0) * 10.0)
     }
 
     private var hitRateScore: Double {
         guard let hr = player.hitRate, hr.total > 0 else { return 5.0 }
-        return (Double(hr.hits) / Double(hr.total)) * 10.0
+        return hr.weightedPct * 10.0
     }
 
     private var oddsScore: Double {
-        let odds = player.overOdds ?? -110
+        // Direction-aware: use the odds matching the recommendation
+        let odds: Int
+        if player.recommendedDirection == "Under" {
+            odds = player.underOdds ?? -110
+        } else {
+            odds = player.overOdds ?? -110
+        }
         if odds >= 100 { return 10.0 }
         else if odds >= -105 { return 8.0 }
         else if odds >= -110 { return 5.0 }
@@ -514,6 +520,18 @@ struct RankingBreakdownSheet: View {
             return "1.05x (Surging)"
         }
         return nil
+    }
+
+    private var homeAwayModifier: String? {
+        guard let mod = player.homeAwayModifier, mod != 1.0 else { return nil }
+        let venue = player.isHome == true ? "Home" : "Away"
+        return String(format: "%.2fx (%@ boost)", mod, venue)
+    }
+
+    private var minutesModifier: String? {
+        guard let mod = player.minutesConfidence, mod != 1.0 else { return nil }
+        let mpg = player.avgMinutes.map { String(format: "%.1f MPG", $0) } ?? ""
+        return String(format: "%.2fx (%@)", mod, mpg)
     }
 
     var body: some View {
@@ -543,7 +561,7 @@ struct RankingBreakdownSheet: View {
                     }
 
                     // Modifiers
-                    if lineupMultiplier != nil || trendModifier != nil {
+                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil {
                         Divider().background(Color.border)
                         modifiersSection
                     }
@@ -624,13 +642,17 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v4)")
+            Text("Formula (v5)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
             Text("(Edge x 0.35) + (Matchup x 0.20) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.8))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Then apply modifiers: Lineup, Trend, Home/Away, Minutes")
+                .font(.caption2)
+                .foregroundStyle(Color.secondaryText.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
@@ -697,8 +719,9 @@ struct RankingBreakdownSheet: View {
 
     private var hitRateDetails: String {
         guard let hr = player.hitRate, hr.total > 0 else { return "No recent data" }
-        let games = hr.results.map { $0.hit ? "HIT" : "MISS" }.joined(separator: ", ")
-        return "\(hr.hits)/\(hr.total) last games (\(games))"
+        let games = hr.results.prefix(5).map { $0.hit ? "HIT" : "MISS" }.joined(separator: ", ")
+        let weightedStr = String(format: "%.0f%%", hr.weightedPct * 100)
+        return "\(hr.hits)/\(hr.total) games | Weighted: \(weightedStr) (\(games))"
     }
 
     private var efficiencyRow: some View {
@@ -734,7 +757,13 @@ struct RankingBreakdownSheet: View {
     }
 
     private var oddsDetails: String {
-        let odds = player.overOdds ?? -110
+        let direction = player.recommendedDirection ?? "Over"
+        let odds: Int
+        if direction == "Under" {
+            odds = player.underOdds ?? -110
+        } else {
+            odds = player.overOdds ?? -110
+        }
         let formatted = odds > 0 ? "+\(odds)" : "\(odds)"
         let tier: String
         if odds >= 100 { tier = "Plus Money" }
@@ -742,7 +771,7 @@ struct RankingBreakdownSheet: View {
         else if odds >= -110 { tier = "Standard" }
         else if odds >= -120 { tier = "Below Avg" }
         else { tier = "Poor Value" }
-        return "Over odds: \(formatted) (\(tier))"
+        return "\(direction) odds: \(formatted) (\(tier))"
     }
 
     // MARK: - Modifiers
@@ -771,6 +800,28 @@ struct RankingBreakdownSheet: View {
                         .font(.caption)
                         .foregroundStyle(player.trendData?.trend == "surging" ? Color.brandEmerald : Color.brandRed)
                     Text("Trend: \(trend)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let ha = homeAwayModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: player.isHome == true ? "house.fill" : "airplane")
+                        .font(.caption)
+                        .foregroundStyle((player.homeAwayModifier ?? 1.0) >= 1.0 ? Color.brandEmerald : Color.brandRed)
+                    Text("Venue: \(ha)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let mins = minutesModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.fill")
+                        .font(.caption)
+                        .foregroundStyle((player.minutesConfidence ?? 1.0) >= 1.0 ? Color.brandEmerald : Color.brandOrange)
+                    Text("Minutes: \(mins)")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                 }
