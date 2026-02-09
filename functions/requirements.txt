@@ -1,6 +1,5 @@
 firebase-functions
 firebase-admin
-google-genai
 nba_api
 python-dotenv
 httpx

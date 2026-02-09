@@ -6,20 +6,22 @@ import Combine
 class DataViewModel: ObservableObject {
 
     @Published var games: [Game] = []
-    @Published var featuredProps: [PlayerCardData] = [] 
-    @Published var forYouProps: [PlayerCardData] = []   
-    @Published var allProps: [PlayerCardData] = []       
+    @Published var featuredProps: [PlayerCardData] = []
+    @Published var forYouProps: [PlayerCardData] = []
+    @Published var allProps: [PlayerCardData] = []
     @Published var searchResults: [PlayerCardData] = []
     @Published var isLoading: Bool = false
     @Published var isSearchLoading: Bool = false
     @Published var errorMessage: String?
     @Published var refreshStatusText: String = ""
     @Published var isRefreshing: Bool = false
+    @Published var refreshComplete: Bool = false
 
-    // Switch this to FirebaseService() when ready
     private let service: DataService
     private var refreshTimer: AnyCancellable?
-    private var isTimerRefresh: Bool = false
+    private var completeDismissTask: Task<Void, Never>?
+    private var lastRefreshDate: Date?
+    private var hasLoadedInitialData: Bool = false
 
     init(service: DataService) {
         self.service = service
@@ -42,26 +44,103 @@ class DataViewModel: ObservableObject {
         }
 
         isLoading = false
-        if !isTimerRefresh {
-            startRefreshTimer()
+
+        if !hasLoadedInitialData {
+            hasLoadedInitialData = true
+            startRefreshListener()
+            startCountdownTimer()
         }
     }
 
-    /// Start a 30-second timer to update countdown and auto-refresh at the top of each hour
-    func startRefreshTimer() {
+    // MARK: - Real-time Refresh Listener
+
+    /// Listen for backend refresh completions via Firestore metadata doc
+    func startRefreshListener() {
+        guard let firebaseService = service as? FirebaseService else {
+            // Mock service — fall back to timer-based refresh
+            return
+        }
+
+        firebaseService.listenForRefresh { [weak self] metadata in
+            Task { @MainActor in
+                guard let self else { return }
+
+                // Ignore the initial snapshot (before any real refresh happens)
+                if self.lastRefreshDate == nil {
+                    self.lastRefreshDate = metadata.completedAt
+                    self.updateCountdown()
+                    return
+                }
+
+                // Only react if this is a NEW refresh (timestamp changed)
+                guard metadata.completedAt > self.lastRefreshDate! else { return }
+                self.lastRefreshDate = metadata.completedAt
+
+                // Show refreshing state and re-fetch data
+                self.isRefreshing = true
+                self.refreshComplete = false
+                self.refreshStatusText = "Refreshing..."
+
+                await self.reloadProps()
+
+                // Show completion
+                self.isRefreshing = false
+                self.refreshComplete = true
+                let df = DateFormatter()
+                df.dateFormat = "h:mm a"
+                self.refreshStatusText = "Updated at \(df.string(from: metadata.completedAt)) — \(metadata.propsWritten) props"
+
+                // After 15 seconds, switch back to countdown
+                self.completeDismissTask?.cancel()
+                self.completeDismissTask = Task {
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    if !Task.isCancelled {
+                        self.refreshComplete = false
+                        self.updateCountdown()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Re-fetch props without showing full loading state
+    private func reloadProps() async {
+        do {
+            async let fetchedTopPicks = service.fetchLiveProps()
+            async let fetchedForYou = service.fetchForYouProps()
+
+            self.featuredProps = try await fetchedTopPicks
+            self.forYouProps = try await fetchedForYou
+
+            // Also refresh allProps if they were previously loaded (for search)
+            if !allProps.isEmpty {
+                self.allProps = try await service.fetchAllProps()
+            }
+        } catch {
+            print("Failed to reload props: \(error)")
+        }
+    }
+
+    // MARK: - Countdown Timer
+
+    /// Update the countdown text every 30 seconds
+    func startCountdownTimer() {
         refreshTimer?.cancel()
-        computeRefreshStatus()
+        updateCountdown()
         refreshTimer = Timer.publish(every: 30, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 Task { @MainActor in
-                    self?.computeRefreshStatus()
+                    guard let self, !self.isRefreshing, !self.refreshComplete else { return }
+                    self.updateCountdown()
                 }
             }
     }
 
-    /// Compute refresh status text based on current PT time
-    func computeRefreshStatus() {
+    /// Compute countdown text based on scheduler schedule (hourly)
+    func updateCountdown() {
+        guard !isRefreshing, !refreshComplete else { return }
+
         let now = Date()
         guard let pt = TimeZone(identifier: "America/Los_Angeles") else { return }
 
@@ -71,36 +150,29 @@ class DataViewModel: ObservableObject {
         let hour = calendar.component(.hour, from: now)
         let minute = calendar.component(.minute, from: now)
 
-        // Outside schedule (2 AM - 5 AM PT) — no games running
+        // Outside schedule (2 AM - 5 AM PT)
         if hour >= 2 && hour < 6 {
-            isRefreshing = false
             refreshStatusText = "Next refresh: 6:00 AM PT"
             return
         }
 
-        // First 5 minutes of each hour — data is refreshing
-        if minute < 5 {
-            if !isRefreshing {
-                isRefreshing = true
-                refreshStatusText = "Refreshing..."
-                Task {
-                    isTimerRefresh = true
-                    await loadInitialData()
-                    isTimerRefresh = false
-                }
-            }
-            return
+        // Show time since last refresh if we have it
+        if let lastRefresh = lastRefreshDate {
+            let df = DateFormatter()
+            df.dateFormat = "h:mm a"
+            let remaining = 60 - minute
+            refreshStatusText = "Last: \(df.string(from: lastRefresh)) · Next in \(remaining)m"
+        } else {
+            let remaining = 60 - minute
+            refreshStatusText = "Refreshes in: \(remaining)m"
         }
-
-        // Normal countdown
-        isRefreshing = false
-        let remaining = 60 - minute
-        refreshStatusText = "Refreshes in: \(remaining)m"
     }
+
+    // MARK: - Search Data
 
     /// Load all props for search functionality
     func loadAllProps() async {
-        guard allProps.isEmpty else { return }  // Only load once
+        guard allProps.isEmpty else { return }
 
         isSearchLoading = true
         do {

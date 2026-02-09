@@ -19,6 +19,7 @@ struct FeedView: View {
                         .tint(.white)
                 } else {
                     ScrollView {
+
                         VStack(alignment: .leading, spacing: 24) {
                             
                             // 1. Header
@@ -29,12 +30,12 @@ struct FeedView: View {
 
                                 if !vm.refreshStatusText.isEmpty {
                                     HStack(spacing: 4) {
-                                        Image(systemName: vm.isRefreshing ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath")
+                                        Image(systemName: vm.refreshComplete ? "checkmark.circle.fill" : (vm.isRefreshing ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath"))
                                             .font(.caption2)
                                         Text(vm.refreshStatusText)
                                             .font(.caption)
                                     }
-                                    .foregroundStyle(.gray.opacity(0.7))
+                                    .foregroundStyle(vm.refreshComplete ? Color.brandEmerald.opacity(0.8) : .gray.opacity(0.7))
                                 }
                             }
                             .padding(.horizontal)
@@ -54,7 +55,7 @@ struct FeedView: View {
                                         HStack(spacing: 4) {
                                             Image(systemName: "star.fill")
                                                 .font(.caption)
-                                            Text("Top 5 Legs")
+                                            Text("Recommended")
                                                 .font(.caption)
                                         }
                                         .foregroundStyle(Color.brandOrange)
@@ -62,7 +63,7 @@ struct FeedView: View {
                                     .padding(.horizontal)
 
                                     LazyVGrid(columns: columns, spacing: 12) {
-                                        ForEach(Array(vm.forYouProps.prefix(5))) { prop in
+                                        ForEach(Array(vm.forYouProps.prefix(4))) { prop in
                                             PlayerPropCard(player: prop)
                                         }
                                     }
@@ -100,9 +101,9 @@ struct FeedView: View {
                             }
                             .padding(.horizontal)
 
-                            // 4. Top Picks Section (highest ranked props)
+                            // 4. Picks Section (sorted first by ranked props)
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Top Picks")
+                                Text("Picks")
                                     .font(.title3)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
@@ -117,6 +118,9 @@ struct FeedView: View {
                             }
                         }
                         .padding(.bottom, 20)
+                    }
+                    .refreshable {
+                        await vm.loadInitialData()
                     }
                 }
             }

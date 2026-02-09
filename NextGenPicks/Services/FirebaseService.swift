@@ -1,10 +1,41 @@
 import Foundation
 import FirebaseFirestore
 
+struct RefreshMetadata {
+    let completedAt: Date
+    let propsWritten: Int
+    let aiAnalyzed: Int
+}
+
 class FirebaseService: DataService {
-    
+
     // Computed property to ensure we don't access Firestore before FirebaseApp.configure()
     private var db: Firestore { Firestore.firestore() }
+    private var refreshListener: ListenerRegistration?
+
+    /// Listen for backend refresh completions in real-time
+    func listenForRefresh(onChange: @escaping (RefreshMetadata) -> Void) {
+        refreshListener?.remove()
+        refreshListener = db.collection("metadata").document("lastRefresh")
+            .addSnapshotListener { snapshot, error in
+                guard let data = snapshot?.data(), error == nil else { return }
+
+                let timestamp = (data["completedAt"] as? Timestamp)?.dateValue() ?? Date()
+                let propsWritten = data["propsWritten"] as? Int ?? 0
+                let aiAnalyzed = data["aiAnalyzed"] as? Int ?? 0
+
+                onChange(RefreshMetadata(
+                    completedAt: timestamp,
+                    propsWritten: propsWritten,
+                    aiAnalyzed: aiAnalyzed
+                ))
+            }
+    }
+
+    func stopListening() {
+        refreshListener?.remove()
+        refreshListener = nil
+    }
     
     func fetchGames() async throws -> [Game] {
         let snapshot = try await db.collection("games")
