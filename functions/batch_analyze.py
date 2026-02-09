@@ -952,6 +952,7 @@ def _fuzzy_find_player(player_name: str) -> dict | None:
 
 def get_player_stats_quick(player_name: str) -> dict | None:
     """Get basic player stats from NBA API including last 5 games for hit rate."""
+    import time
     try:
         from nba_api.stats.static import players, teams
         from nba_api.stats.endpoints import playergamelog, commonplayerinfo
@@ -962,6 +963,9 @@ def get_player_stats_quick(player_name: str) -> dict | None:
             return None
 
         player_id = player['id']
+
+        # Small delay to avoid NBA API rate limiting (429s / connection drops)
+        time.sleep(0.6)
 
         position = "N/A"
         current_team = ""
@@ -1230,7 +1234,7 @@ def format_props_for_ios(props: list) -> list:
     return ios_props
 
 
-@https_fn.on_request(timeout_sec=540, memory=1024)
+@https_fn.on_request(timeout_sec=540, memory=2048)
 def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     """
     Fetch NBA player props from Underdog Fantasy and rank with data-driven scoring.
@@ -1326,8 +1330,11 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             seen_player_ids.add(item["player_id"])
             players_by_odds_value.append(item["player_data"])
 
-    # Enrich ALL players with NBA API stats for accurate edge/ranking calculations
-    players_to_enrich = players_by_odds_value
+    # Enrich top players by odds value (cap to avoid NBA API rate-limit timeouts)
+    MAX_ENRICH = 60
+    players_to_enrich = players_by_odds_value[:MAX_ENRICH]
+    if len(players_by_odds_value) > MAX_ENRICH:
+        print(f"  ⚠️ Capping enrichment from {len(players_by_odds_value)} to {MAX_ENRICH} players")
 
     print(
         f"  Will enrich {len(players_to_enrich)} players with NBA API")
@@ -1787,7 +1794,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     schedule="0 0-1,6-23 * * *",
     timezone=scheduler_fn.Timezone("America/Los_Angeles"),
     timeout_sec=540,
-    memory=1024
+    memory=2048
 )
 def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     """

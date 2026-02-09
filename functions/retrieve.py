@@ -1,3 +1,4 @@
+import time
 from nba_api.stats.static import players, teams
 from nba_api.stats.endpoints import playergamelog, leaguedashteamstats, leaguedashplayerstats
 
@@ -128,6 +129,7 @@ def get_all_player_advanced_stats() -> dict:
     print("DEBUG: Fetching advanced stats for all NBA players...")
 
     try:
+        time.sleep(1)  # Stagger after team defense call to avoid NBA API rate limit
         stats = leaguedashplayerstats.LeagueDashPlayerStats(
             season='2025-26',
             measure_type_detailed_defense='Advanced'
