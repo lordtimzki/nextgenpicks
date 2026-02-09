@@ -248,19 +248,22 @@ struct PlayerPropCard: View {
                             .foregroundStyle(edge > 0 ? Color.brandEmerald : Color.brandRed)
                         }
 
-                        // Hit rate indicator (Last 5 games)
+                        // Hit rate indicator (Last 5 games) - direction-aware
                         if let hitRate = player.hitRate, hitRate.total > 0 {
+                            let isUnder = player.recommendedDirection == "Under"
+                            let directionHits = isUnder ? (hitRate.total - hitRate.hits) : hitRate.hits
                             HStack(spacing: 3) {
-                                // Visual dots for last 5 games
+                                // Visual dots: green = confirms recommendation
                                 ForEach(0..<hitRate.results.count, id: \.self) { index in
+                                    let confirmsDirection = isUnder ? !hitRate.results[index].hit : hitRate.results[index].hit
                                     Circle()
-                                        .fill(hitRate.results[index].hit ? Color.brandEmerald : Color.brandRed.opacity(0.5))
+                                        .fill(confirmsDirection ? Color.brandEmerald : Color.brandRed.opacity(0.5))
                                         .frame(width: 6, height: 6)
                                 }
-                                Text("\(hitRate.hits)/\(hitRate.total)")
+                                Text("\(directionHits)/\(hitRate.total)")
                                     .font(.caption2)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(hitRate.hits >= 3 ? Color.brandEmerald : Color.secondaryText)
+                                    .foregroundStyle(directionHits >= (hitRate.total / 2 + 1) ? Color.brandEmerald : Color.secondaryText)
                             }
                         }
                     }
@@ -487,7 +490,8 @@ struct RankingBreakdownSheet: View {
 
     private var hitRateScore: Double {
         guard let hr = player.hitRate, hr.total > 0 else { return 5.0 }
-        return hr.weightedPct * 10.0
+        let directionalPct = player.recommendedDirection == "Under" ? (1.0 - hr.weightedPct) : hr.weightedPct
+        return directionalPct * 10.0
     }
 
     private var oddsScore: Double {
@@ -719,9 +723,16 @@ struct RankingBreakdownSheet: View {
 
     private var hitRateDetails: String {
         guard let hr = player.hitRate, hr.total > 0 else { return "No recent data" }
-        let games = hr.results.prefix(5).map { $0.hit ? "HIT" : "MISS" }.joined(separator: ", ")
-        let weightedStr = String(format: "%.0f%%", hr.weightedPct * 100)
-        return "\(hr.hits)/\(hr.total) games | Weighted: \(weightedStr) (\(games))"
+        let isUnder = player.recommendedDirection == "Under"
+        let directionHits = isUnder ? (hr.total - hr.hits) : hr.hits
+        let games = hr.results.prefix(5).map { result in
+            let confirmsDirection = isUnder ? !result.hit : result.hit
+            return confirmsDirection ? "HIT" : "MISS"
+        }.joined(separator: ", ")
+        let directionalPct = isUnder ? (1.0 - hr.weightedPct) : hr.weightedPct
+        let weightedStr = String(format: "%.0f%%", directionalPct * 100)
+        let dirLabel = isUnder ? "Under" : "Over"
+        return "\(directionHits)/\(hr.total) \(dirLabel) | Weighted: \(weightedStr) (\(games))"
     }
 
     private var efficiencyRow: some View {

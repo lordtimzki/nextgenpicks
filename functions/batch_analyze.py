@@ -466,11 +466,13 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     if player_avg > 0:
         recommended_direction = "Over" if player_avg > line else "Under"
 
-    # 2. Hit Rate Score - recency-weighted consistency
+    # 2. Hit Rate Score - direction-aware recency-weighted consistency
+    #    weighted_pct = Over hit rate.  For Under recs, flip to Under hit rate.
     hit_rate_score = 5.0  # default neutral
     if hit_rate and hit_rate.get("total", 0) > 0:
         weighted_pct = hit_rate.get("weightedPct", hit_rate["hits"] / hit_rate["total"])
-        hit_rate_score = weighted_pct * 10.0
+        directional_pct = (1.0 - weighted_pct) if recommended_direction == "Under" else weighted_pct
+        hit_rate_score = directional_pct * 10.0
 
     # 3. Player Efficiency Score - stat-aware using advanced stats
     efficiency_score = calculate_player_efficiency_score(stat, player_advanced)
