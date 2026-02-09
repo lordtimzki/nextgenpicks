@@ -430,51 +430,47 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   trend_data: dict = None,
                                   opp_def_rank: int = None,
                                   opp_pace_rank: int = None,
-                                  player_advanced: dict = None) -> tuple:
+                                  player_advanced: dict = None,
+                                  is_home: bool = None,
+                                  game_log: list = None) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
-    Returns (total_score, edge_value, player_average_for_stat, urgency_score, recommended_direction)
+    Returns (total_score, edge_value, player_average_for_stat, urgency_score,
+             recommended_direction, ha_modifier, min_modifier)
 
-    Formula v4: (edge * 0.35) + (matchup * 0.20) + (hitRate * 0.20) + (efficiency * 0.10) + (odds * 0.15)
-    Then apply lineup and trend modifiers.
+    Formula v5: (edge * 0.35) + (matchup * 0.20) + (hitRate * 0.20) + (efficiency * 0.10) + (odds * 0.15)
+    Then apply modifiers: lineup, trend, home/away, minutes confidence.
     """
-    stat = prop.get("stat_name", "").lower()
+    stat = prop.get("stat_name", "")
     line = float(prop.get("line", 0))
 
     # Determine which average to use for this prop
-    player_avg = 0
-    stat_lower = stat.lower()
-
-    if "3-pointer" in stat_lower or "3pm" in stat_lower:
-        player_avg = averages.get("fg3m", 0)
-    elif "point" in stat_lower or "pts" in stat_lower:
-        player_avg = averages.get("pts", 0)
-    elif "rebound" in stat_lower or "reb" in stat_lower:
-        player_avg = averages.get("reb", 0)
-    elif "assist" in stat_lower or "ast" in stat_lower:
-        player_avg = averages.get("ast", 0)
-    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
-        player_avg = averages.get(
-            "pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
+    stat_key = _resolve_stat_key(stat)
+    if stat_key == "pra":
+        player_avg = averages.get("pts", 0) + averages.get("reb", 0) + averages.get("ast", 0)
+    elif stat_key:
+        player_avg = averages.get(stat_key, 0)
+    else:
+        player_avg = 0
 
     # Early exit: OUT players get score 0
     if lineup_status == "OUT":
-        return 0.0, 0.0, round(player_avg, 1), 0.0, None
+        return 0.0, 0.0, round(player_avg, 1), 0.0, None, 1.0, 1.0
 
-    # 1. Edge Score - how much player avg exceeds the line
+    # 1. Edge Score - bidirectional: rewards both Over AND Under signals
     edge = player_avg - line if player_avg > 0 else 0
-    edge_score = min(10.0, max(0.0, (edge / 5.0) * 10.0))
+    edge_score = min(10.0, (abs(edge) / 5.0) * 10.0)
 
     # Determine recommendation
     recommended_direction = None
     if player_avg > 0:
         recommended_direction = "Over" if player_avg > line else "Under"
 
-    # 2. Hit Rate Score - consistency in last 5 games
+    # 2. Hit Rate Score - recency-weighted consistency
     hit_rate_score = 5.0  # default neutral
     if hit_rate and hit_rate.get("total", 0) > 0:
-        hit_pct = hit_rate["hits"] / hit_rate["total"]
-        hit_rate_score = hit_pct * 10.0  # 5/5 = 10, 0/5 = 0
+        weighted_pct = hit_rate.get("weightedPct", hit_rate["hits"] / hit_rate["total"])
+        hit_rate_score = weighted_pct * 10.0
 
     # 3. Player Efficiency Score - stat-aware using advanced stats
     efficiency_score = calculate_player_efficiency_score(stat, player_advanced)
@@ -482,23 +478,11 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     # 4. Urgency Score (returned but not in formula)
     urgency_score = calculate_urgency_score(game_time_utc)
 
-    # 5. Odds Value Score
-    try:
-        over_odds = int(
-            str(prop.get("over_american", "-110")).replace("+", ""))
-    except (ValueError, TypeError):
-        over_odds = -110
-
-    if over_odds >= 100:
-        odds_score = 10.0
-    elif over_odds >= -105:
-        odds_score = 8.0
-    elif over_odds >= -110:
-        odds_score = 5.0
-    elif over_odds >= -120:
-        odds_score = 3.0
-    else:
-        odds_score = 2.0
+    # 5. Odds Value Score - direction-aware (uses the odds matching recommendation)
+    over_odds_val = _parse_odds(prop.get("over_american", "-110"))
+    under_odds_val = _parse_odds(prop.get("under_american", "-110"))
+    relevant_odds = under_odds_val if recommended_direction == "Under" else over_odds_val
+    odds_score = _odds_tier_score(relevant_odds)
 
     # 6. Matchup Score - direction-aware opponent quality
     matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction)
@@ -523,7 +507,18 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
         elif trend == "surging":
             total = min(10.0, total * 1.05)
 
-    return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction
+    # Apply home/away modifier (0.92 - 1.08)
+    ha_modifier = calculate_home_away_modifier(game_log or [], stat, is_home)
+    total *= ha_modifier
+
+    # Apply minutes confidence modifier (0.93 - 1.05)
+    min_modifier, _ = calculate_minutes_confidence(game_log or [])
+    total *= min_modifier
+
+    # Final clamp
+    total = max(0.0, min(10.0, total))
+
+    return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction, round(ha_modifier, 3), round(min_modifier, 3)
 
 
 def calculate_matchup_score(opp_def_rank: int = None, opp_pace_rank: int = None,
@@ -625,7 +620,7 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
         hit_rate = calculate_hit_rate(last5_games or [], stat_name, line)
         trend_data = calculate_trend_score(last5_games or [], stat_name)
 
-        score, edge, player_avg, urgency, recommended_direction = calculate_prop_ranking_score(
+        score, edge, player_avg, urgency, recommended_direction, _, _ = calculate_prop_ranking_score(
             prop, averages, game_time_utc,
             lineup_status=lineup_status,
             hit_rate=hit_rate,
@@ -640,6 +635,77 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
             }
 
     return best_score, best_components
+
+
+def calculate_home_away_modifier(games: list, stat_name: str, is_home_tonight: bool = None) -> float:
+    """
+    Compare player's home vs away avg for a stat and return a modifier.
+    Returns multiplier in [0.92, 1.08] — max 8% swing.
+    Requires 2+ home AND 2+ away games to activate; otherwise returns 1.0.
+    """
+    if is_home_tonight is None or not games:
+        return 1.0
+
+    stat_key = _resolve_stat_key(stat_name)
+    if not stat_key:
+        return 1.0
+
+    home_vals = []
+    away_vals = []
+
+    for game in games:
+        matchup = game.get("matchup", "")
+        value = _game_stat_value(game, stat_key)
+        if "vs." in matchup:
+            home_vals.append(value)
+        elif "@" in matchup:
+            away_vals.append(value)
+
+    # Need at least 2 of each to be meaningful
+    if len(home_vals) < 2 or len(away_vals) < 2:
+        return 1.0
+
+    home_avg = sum(home_vals) / len(home_vals)
+    away_avg = sum(away_vals) / len(away_vals)
+    overall_avg = (sum(home_vals) + sum(away_vals)) / (len(home_vals) + len(away_vals))
+
+    if overall_avg == 0:
+        return 1.0
+
+    # How much better the player does in tonight's venue vs overall
+    venue_avg = home_avg if is_home_tonight else away_avg
+    raw_modifier = venue_avg / overall_avg
+
+    # Clamp to [0.92, 1.08]
+    return max(0.92, min(1.08, raw_modifier))
+
+
+def calculate_minutes_confidence(games: list) -> tuple:
+    """
+    Compute average minutes from game log and return (modifier, avg_minutes).
+    >=32 MPG → 1.05, 28-32 → 1.02, 22-28 → 1.0, 16-22 → 0.97, <16 → 0.93
+    """
+    if not games:
+        return 1.0, 0.0
+
+    minutes = [g.get("min", 0) for g in games if g.get("min", 0) > 0]
+    if not minutes:
+        return 1.0, 0.0
+
+    avg_min = sum(minutes) / len(minutes)
+
+    if avg_min >= 32:
+        modifier = 1.05
+    elif avg_min >= 28:
+        modifier = 1.02
+    elif avg_min >= 22:
+        modifier = 1.0
+    elif avg_min >= 16:
+        modifier = 0.97
+    else:
+        modifier = 0.93
+
+    return modifier, round(avg_min, 1)
 
 
 def fetch_json_httpx(url: str, headers: dict = None) -> tuple:
@@ -912,28 +978,42 @@ def get_player_stats_quick(player_name: str) -> dict | None:
         try:
             log = playergamelog.PlayerGameLog(
                 player_id=player_id, season='2025-26')
-            games = log.get_normalized_dict()['PlayerGameLog'][:5]
+            all_games = log.get_normalized_dict()['PlayerGameLog'][:10]
 
-            if games:
-                game_log_team = str(games[0]['MATCHUP'].split(" ")[0])
+            if all_games:
+                game_log_team = str(all_games[0]['MATCHUP'].split(" ")[0])
                 # Prefer CommonPlayerInfo team (updated faster after trades)
                 team_code = current_team if current_team else game_log_team
                 nba_team = teams.find_team_by_abbreviation(team_code)
                 team_name = nba_team['full_name'] if nba_team else "Unknown"
 
-                avg_pts = sum(g['PTS'] for g in games) / len(games)
-                avg_reb = sum(g['REB'] for g in games) / len(games)
-                avg_ast = sum(g['AST'] for g in games) / len(games)
-                avg_fg3m = sum(g['FG3M'] for g in games) / len(games)
+                # Averages from first 5 games (recent form for edge scoring)
+                recent5 = all_games[:5]
+                avg_pts = sum(g['PTS'] for g in recent5) / len(recent5)
+                avg_reb = sum(g['REB'] for g in recent5) / len(recent5)
+                avg_ast = sum(g['AST'] for g in recent5) / len(recent5)
+                avg_fg3m = sum(g['FG3M'] for g in recent5) / len(recent5)
 
-                # Extract last 5 game stats for hit rate calculation
-                last5_games = []
-                for g in games:
-                    last5_games.append({
+                # Build full game log (up to 10 games) with minutes
+                game_log = []
+                for g in all_games:
+                    # Parse minutes: NBA API MIN field is "MM:SS" or "MM" string
+                    raw_min = g.get('MIN', '0')
+                    try:
+                        if ':' in str(raw_min):
+                            parts = str(raw_min).split(':')
+                            minutes = int(parts[0]) + int(parts[1]) / 60.0
+                        else:
+                            minutes = float(raw_min)
+                    except (ValueError, TypeError):
+                        minutes = 0.0
+
+                    game_log.append({
                         "pts": g['PTS'],
                         "reb": g['REB'],
                         "ast": g['AST'],
                         "fg3m": g['FG3M'],
+                        "min": round(minutes, 1),
                         "matchup": g['MATCHUP'],
                         "date": g['GAME_DATE']
                     })
@@ -952,7 +1032,8 @@ def get_player_stats_quick(player_name: str) -> dict | None:
                         "ast": round(avg_ast, 1),
                         "fg3m": round(avg_fg3m, 1)
                     },
-                    "last5Games": last5_games
+                    "last5Games": game_log[:5],
+                    "gameLog": game_log,
                 }
         except Exception as e:
             print(f"Could not get game log for {player_name}: {e}")
@@ -973,44 +1054,79 @@ def get_player_stats_quick(player_name: str) -> dict | None:
         return None
 
 
+def _parse_odds(odds_str: str) -> int:
+    """Parse American odds string to int. Returns -110 on failure."""
+    try:
+        return int(str(odds_str).replace("+", ""))
+    except (ValueError, TypeError):
+        return -110
+
+
+def _odds_tier_score(odds_val: int) -> float:
+    """Convert American odds int to a 0-10 tiered score."""
+    if odds_val >= 100:
+        return 10.0
+    elif odds_val >= -105:
+        return 8.0
+    elif odds_val >= -110:
+        return 5.0
+    elif odds_val >= -120:
+        return 3.0
+    return 2.0
+
+
+def _resolve_stat_key(stat_name: str) -> str | None:
+    """Map a display stat name to its game-log dict key."""
+    stat_lower = stat_name.lower()
+    if "3-pointer" in stat_lower or "3pm" in stat_lower:
+        return "fg3m"
+    elif "point" in stat_lower or "pts" in stat_lower:
+        return "pts"
+    elif "rebound" in stat_lower or "reb" in stat_lower:
+        return "reb"
+    elif "assist" in stat_lower or "ast" in stat_lower:
+        return "ast"
+    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        return "pra"
+    return None
+
+
+def _game_stat_value(game: dict, stat_key: str) -> float:
+    """Extract the stat value from a game dict given a resolved stat key."""
+    if stat_key == "pra":
+        return game.get("pts", 0) + game.get("reb", 0) + game.get("ast", 0)
+    return game.get(stat_key, 0)
+
+
 def calculate_hit_rate(last5_games: list, stat_name: str, line: float) -> dict:
     """
     Calculate hit rate for a specific stat against a line.
     Returns dict with hits, total, and individual game results.
     """
     if not last5_games:
-        return {"hits": 0, "total": 0, "results": []}
+        return {"hits": 0, "total": 0, "results": [], "weightedPct": 0.0}
 
-    stat_key = None
-    stat_lower = stat_name.lower()
-
-    if "3-pointer" in stat_lower or "3pm" in stat_lower:
-        stat_key = "fg3m"
-    elif "point" in stat_lower or "pts" in stat_lower:
-        stat_key = "pts"
-    elif "rebound" in stat_lower or "reb" in stat_lower:
-        stat_key = "reb"
-    elif "assist" in stat_lower or "ast" in stat_lower:
-        stat_key = "ast"
-    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
-        stat_key = "pra"  # Combined stat
-
+    stat_key = _resolve_stat_key(stat_name)
     if not stat_key:
-        return {"hits": 0, "total": 0, "results": []}
+        return {"hits": 0, "total": 0, "results": [], "weightedPct": 0.0}
 
     hits = 0
     results = []
+    weighted_hits = 0.0
+    total_weight = 0.0
+    num_games = len(last5_games)
 
-    for game in last5_games:
-        if stat_key == "pra":
-            value = game.get("pts", 0) + game.get("reb", 0) + \
-                game.get("ast", 0)
-        else:
-            value = game.get(stat_key, 0)
-
+    for i, game in enumerate(last5_games):
+        value = _game_stat_value(game, stat_key)
         hit = value > line
         if hit:
             hits += 1
+
+        # Recency weight: most recent (i=0) = 1.0, oldest = 0.5, linear decay
+        weight = 1.0 - (i / max(num_games - 1, 1)) * 0.5 if num_games > 1 else 1.0
+        weighted_hits += weight if hit else 0.0
+        total_weight += weight
+
         results.append({
             "value": value,
             "hit": hit,
@@ -1018,10 +1134,13 @@ def calculate_hit_rate(last5_games: list, stat_name: str, line: float) -> dict:
             "matchup": game.get("matchup", "")
         })
 
+    weighted_pct = round(weighted_hits / total_weight, 3) if total_weight > 0 else 0.0
+
     return {
         "hits": hits,
-        "total": len(last5_games),
-        "results": results
+        "total": num_games,
+        "results": results,
+        "weightedPct": weighted_pct,
     }
 
 
@@ -1034,30 +1153,12 @@ def calculate_trend_score(last5_games: list, stat_name: str) -> dict:
     if len(last5_games) < 3:
         return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": 0, "full_avg": 0}
 
-    stat_key = None
-    stat_lower = stat_name.lower()
-
-    if "3-pointer" in stat_lower or "3pm" in stat_lower:
-        stat_key = "fg3m"
-    elif "point" in stat_lower or "pts" in stat_lower:
-        stat_key = "pts"
-    elif "rebound" in stat_lower or "reb" in stat_lower:
-        stat_key = "reb"
-    elif "assist" in stat_lower or "ast" in stat_lower:
-        stat_key = "ast"
-    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
-        stat_key = "pra"
-
+    stat_key = _resolve_stat_key(stat_name)
     if not stat_key:
         return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": 0, "full_avg": 0}
 
     # Get values for all games
-    values = []
-    for game in last5_games:
-        if stat_key == "pra":
-            values.append(game.get("pts", 0) + game.get("reb", 0) + game.get("ast", 0))
-        else:
-            values.append(game.get(stat_key, 0))
+    values = [_game_stat_value(game, stat_key) for game in last5_games]
 
     full_avg = sum(values) / len(values) if values else 0
     # Last 2 games (most recent)
@@ -1398,10 +1499,15 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         priority_stats = ["Points", "Rebounds", "Assists",
                           "3-Pointers Made", "Pts + Rebs + Asts"]
 
-        # Get last 5 games for hit rate calculation
-        last5_games = []
-        if nba_stats:
-            last5_games = nba_stats.get("last5Games", [])
+        # Get game log (up to 10 games) and last 5 for trend
+        game_log = nba_stats.get("gameLog", []) if nba_stats else []
+        last5_games = nba_stats.get("last5Games", []) if nba_stats else []
+
+        # Determine if player is home tonight
+        is_home_tonight = None
+        if team_abbr and abbr_title and " @ " in abbr_title:
+            _, home_t_check = abbr_title.split(" @ ")
+            is_home_tonight = (team_abbr == home_t_check.strip())
 
         # Get team context from cache or compute once per team
         if team_abbr and team_abbr in team_context_cache:
@@ -1444,23 +1550,25 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             if stat_name not in priority_stats:
                 continue
 
-            # Calculate hit rate and trend BEFORE ranking (needed as inputs)
+            # Calculate hit rate (full game log) and trend (last 5) BEFORE ranking
             line = float(prop.get("line", 0))
-            hit_rate = calculate_hit_rate(last5_games, stat_name, line)
+            hit_rate = calculate_hit_rate(game_log if game_log else last5_games, stat_name, line)
             trend_data = calculate_trend_score(last5_games, stat_name)
 
             # Get opponent defense stats for matchup scoring
             opp_def_stats = team_defense_cache.get(opponent_abbr, {})
 
-            # Calculate ranking score with all context
-            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
+            # Calculate ranking score with all context (v5)
+            prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
                 hit_rate=hit_rate,
                 trend_data=trend_data,
                 opp_def_rank=opp_def_stats.get("def_rank"),
                 opp_pace_rank=opp_def_stats.get("pace_rank"),
-                player_advanced=player_adv
+                player_advanced=player_adv,
+                is_home=is_home_tonight,
+                game_log=game_log,
             )
 
             # Calculate matchup score for prop card (informational)
@@ -1472,6 +1580,9 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 
             # Calculate efficiency score for prop card (informational)
             eff_score = calculate_player_efficiency_score(stat_name, player_adv)
+
+            # Minutes confidence (informational)
+            _, avg_minutes = calculate_minutes_confidence(game_log)
 
             # Format stat name
             short_name = stat_name.replace(
@@ -1527,11 +1638,12 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
                     "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
                 } if player_adv else None,
-                # Hit rate data (last 5 games)
+                # Hit rate data (up to 10 games, recency-weighted)
                 "hitRate": {
                     "hits": hit_rate["hits"],
                     "total": hit_rate["total"],
-                    "results": hit_rate["results"]
+                    "results": hit_rate["results"],
+                    "weightedPct": hit_rate.get("weightedPct", 0.0),
                 },
                 # Trend data
                 "trendData": {
@@ -1541,6 +1653,11 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     "recentAvg": trend_data.get("recent_avg", 0),
                     "fullAvg": trend_data.get("full_avg", 0),
                 },
+                # v5 modifiers
+                "isHome": is_home_tonight,
+                "homeAwayModifier": ha_modifier,
+                "minutesConfidence": min_modifier,
+                "avgMinutes": avg_minutes,
                 # Will be set after sorting
                 "section": "topPicks",
                 "featured": False,
@@ -1899,8 +2016,15 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             except:
                 pass
 
-        # Get last 5 games for hit rate
+        # Get game log (up to 10 games) and last 5 for trend
+        game_log = nba_stats.get("gameLog", []) if nba_stats else []
         last5_games = nba_stats.get("last5Games", []) if nba_stats else []
+
+        # Determine if player is home tonight
+        is_home_tonight = None
+        if team_abbr and abbr_title and " @ " in abbr_title:
+            _, home_t_check = abbr_title.split(" @ ")
+            is_home_tonight = (team_abbr == home_t_check.strip())
 
         # Get team context from cache or compute once per team
         if team_abbr and team_abbr in team_context_cache:
@@ -1942,23 +2066,25 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             if stat_name not in priority_stats:
                 continue
 
-            # Calculate hit rate and trend BEFORE ranking (needed as inputs)
+            # Calculate hit rate (full game log) and trend (last 5) BEFORE ranking
             line = float(prop.get("line", 0))
-            hit_rate = calculate_hit_rate(last5_games, stat_name, line)
+            hit_rate = calculate_hit_rate(game_log if game_log else last5_games, stat_name, line)
             trend_data = calculate_trend_score(last5_games, stat_name)
 
             # Get opponent defense stats for matchup scoring
             opp_def_stats = team_defense_cache.get(opponent_abbr, {})
 
-            # Calculate ranking score with all context
-            prop_score, edge, player_avg, urgency_score, recommended_direction = calculate_prop_ranking_score(
+            # Calculate ranking score with all context (v5)
+            prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
                 hit_rate=hit_rate,
                 trend_data=trend_data,
                 opp_def_rank=opp_def_stats.get("def_rank"),
                 opp_pace_rank=opp_def_stats.get("pace_rank"),
-                player_advanced=player_adv
+                player_advanced=player_adv,
+                is_home=is_home_tonight,
+                game_log=game_log,
             )
 
             # Calculate matchup score for prop card (informational)
@@ -1970,6 +2096,9 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
 
             # Calculate efficiency score for prop card (informational)
             eff_score = calculate_player_efficiency_score(stat_name, player_adv)
+
+            # Minutes confidence (informational)
+            _, avg_minutes = calculate_minutes_confidence(game_log)
 
             short_name = stat_name.replace(
                 "Points", "Pts").replace("Rebounds", "Reb")
@@ -2022,7 +2151,12 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                     "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
                     "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
                 } if player_adv else None,
-                "hitRate": {"hits": hit_rate["hits"], "total": hit_rate["total"], "results": hit_rate["results"]},
+                "hitRate": {
+                    "hits": hit_rate["hits"],
+                    "total": hit_rate["total"],
+                    "results": hit_rate["results"],
+                    "weightedPct": hit_rate.get("weightedPct", 0.0),
+                },
                 # Trend data
                 "trendData": {
                     "trend": trend_data.get("trend", "stable"),
@@ -2031,6 +2165,11 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                     "recentAvg": trend_data.get("recent_avg", 0),
                     "fullAvg": trend_data.get("full_avg", 0),
                 },
+                # v5 modifiers
+                "isHome": is_home_tonight,
+                "homeAwayModifier": ha_modifier,
+                "minutesConfidence": min_modifier,
+                "avgMinutes": avg_minutes,
                 "section": "topPicks",
                 "featured": False,
                 "trending": "up",
