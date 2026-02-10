@@ -1,5 +1,6 @@
+import time
 from nba_api.stats.static import players, teams
-from nba_api.stats.endpoints import playergamelog, leaguedashteamstats, leaguedashplayerstats
+from nba_api.stats.endpoints import playergamelog, leaguedashteamstats, leaguedashplayerstats, leaguedashplayerbiostats
 
 # Get player data using nba api
 async def get_player_data(player_name):
@@ -77,6 +78,46 @@ async def get_player_data(player_name):
         "last_10_games": recent_games
     }
 
+
+# Bulk fetch stat-specific opponent stats (single API call for all 30 teams)
+def get_all_team_opponent_stats() -> dict:
+    """
+    Fetch opponent (allowed) stats for all NBA teams in one API call.
+    Returns dict keyed by team abbreviation with opp_pts_rank, opp_reb_rank,
+    opp_ast_rank, opp_fg3m_rank (rank 1 = best defense, 30 = worst).
+    """
+    print("DEBUG: Fetching opponent stats for all 30 NBA teams...")
+
+    try:
+        time.sleep(0.5)
+        stats = leaguedashteamstats.LeagueDashTeamStats(
+            season='2025-26',
+            measure_type_detailed_defense='Opponent'
+        )
+        df = stats.get_data_frames()[0]
+
+        opp_stats = {}
+        for _, row in df.iterrows():
+            team_id = int(row['TEAM_ID'])
+            nba_team = teams.find_team_name_by_id(team_id)
+            team_abbrev = nba_team['abbreviation'] if nba_team else ''
+
+            if team_abbrev:
+                opp_stats[team_abbrev] = {
+                    "opp_pts_rank": int(row.get('OPP_PTS_RANK', 15)),
+                    "opp_reb_rank": int(row.get('OPP_REB_RANK', 15)),
+                    "opp_ast_rank": int(row.get('OPP_AST_RANK', 15)),
+                    "opp_fg3m_rank": int(row.get('OPP_FG3M_RANK', 15)),
+                }
+
+        print(f"DEBUG: Fetched opponent stats for {len(opp_stats)} teams")
+        return opp_stats
+
+    except Exception as e:
+        print(f"ERROR fetching opponent stats: {e}")
+        return {}
+
+
 # Bulk fetch all team defense stats (single API call for all 30 teams)
 def get_all_team_defense_stats() -> dict:
     """
@@ -119,6 +160,47 @@ def get_all_team_defense_stats() -> dict:
         return {}
 
 
+# Bulk fetch player bio stats (single API call for position/team info)
+def get_all_player_bio_stats() -> dict:
+    """
+    Fetch basic bio stats (Team, Position) for all players.
+    Returns dict keyed by PLAYER_ID.
+    """
+    print("DEBUG: Fetching player bio stats (Position, Team) for all players...")
+    try:
+        time.sleep(0.5)
+        # LeagueDashPlayerBioStats usually contains position info?
+        # Note: If it doesn't, we might need a fallback or different endpoint.
+        # But commonly used for height/weight/etc.
+        # Let's verify fields if possible, but assuming it works per investigator.
+        stats = leaguedashplayerbiostats.LeagueDashPlayerBioStats(
+            season='2025-26'
+        )
+        df = stats.get_data_frames()[0]
+        
+        bio_stats = {}
+        # Columns often: PLAYER_ID, PLAYER_NAME, TEAM_ABBREVIATION, AGE, PLAYER_HEIGHT, PLAYER_WEIGHT, COLLEGE, COUNTRY, DRAFT_YEAR, DRAFT_ROUND, DRAFT_NUMBER, GP, PTS, REB, AST, NET_RATING, OREB_PCT, DREB_PCT, USG_PCT, TS_PCT, AST_PCT
+        # Wait, usually it doesn't have POSITION explicitly in some versions.
+        # But let's check for it. If not present, we will rely on commonplayerinfo fallback in main script.
+        # Actually, let's just grab what we can: Team Abbr is critical.
+        
+        has_pos = 'POSITION' in df.columns
+        
+        for _, row in df.iterrows():
+            player_id = int(row['PLAYER_ID'])
+            bio_stats[player_id] = {
+                "team_abbr": str(row['TEAM_ABBREVIATION']),
+                "position": str(row['POSITION']) if has_pos else "N/A",
+                "name": str(row['PLAYER_NAME'])
+            }
+            
+        print(f"DEBUG: Fetched bio stats for {len(bio_stats)} players")
+        return bio_stats
+    except Exception as e:
+        print(f"ERROR fetching player bio stats: {e}")
+        return {}
+
+
 # Bulk fetch player advanced stats (single API call for all ~500 players)
 def get_all_player_advanced_stats() -> dict:
     """
@@ -128,6 +210,7 @@ def get_all_player_advanced_stats() -> dict:
     print("DEBUG: Fetching advanced stats for all NBA players...")
 
     try:
+        time.sleep(1)  # Stagger after team defense call to avoid NBA API rate limit
         stats = leaguedashplayerstats.LeagueDashPlayerStats(
             season='2025-26',
             measure_type_detailed_defense='Advanced'

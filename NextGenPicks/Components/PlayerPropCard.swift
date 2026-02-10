@@ -3,7 +3,6 @@ import SwiftUI
 struct PlayerPropCard: View {
     let player: PlayerCardData
     @State private var showingMoreMarkets: Bool = false
-    @State private var showingPlayerDetail: Bool = false
     @State private var showingRankingBreakdown: Bool = false
 
     private var recommendation: String? {
@@ -239,28 +238,33 @@ struct PlayerPropCard: View {
                     HStack(spacing: 12) {
                         // Edge indicator
                         if let edge = player.edge, let avg = player.playerAverage, edge != 0 {
+                            let edgeConfirmsDirection = (player.recommendedDirection == "Under" && edge < 0) ||
+                                                        (player.recommendedDirection != "Under" && edge > 0)
                             HStack(spacing: 4) {
                                 Image(systemName: edge > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                                     .font(.caption2)
                                 Text("Avg: \(String(format: "%.1f", avg))")
                                     .font(.caption2)
                             }
-                            .foregroundStyle(edge > 0 ? Color.brandEmerald : Color.brandRed)
+                            .foregroundStyle(edgeConfirmsDirection ? Color.brandEmerald : Color.brandRed)
                         }
 
-                        // Hit rate indicator (Last 5 games)
+                        // Hit rate indicator (Last 5 games) - direction-aware
                         if let hitRate = player.hitRate, hitRate.total > 0 {
+                            let isUnder = player.recommendedDirection == "Under"
+                            let directionHits = isUnder ? (hitRate.total - hitRate.hits) : hitRate.hits
                             HStack(spacing: 3) {
-                                // Visual dots for last 5 games
+                                // Visual dots: green = confirms recommendation
                                 ForEach(0..<hitRate.results.count, id: \.self) { index in
+                                    let confirmsDirection = isUnder ? !hitRate.results[index].hit : hitRate.results[index].hit
                                     Circle()
-                                        .fill(hitRate.results[index].hit ? Color.brandEmerald : Color.brandRed.opacity(0.5))
+                                        .fill(confirmsDirection ? Color.brandEmerald : Color.brandRed.opacity(0.5))
                                         .frame(width: 6, height: 6)
                                 }
-                                Text("\(hitRate.hits)/\(hitRate.total)")
+                                Text("\(directionHits)/\(hitRate.total)")
                                     .font(.caption2)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(hitRate.hits >= 3 ? Color.brandEmerald : Color.secondaryText)
+                                    .foregroundStyle(directionHits >= (hitRate.total / 2 + 1) ? Color.brandEmerald : Color.secondaryText)
                             }
                         }
                     }
@@ -481,17 +485,24 @@ struct RankingBreakdownSheet: View {
 
     // Recompute component scores from stored data to show the math
     private var edgeScore: Double {
-        guard let edge = player.edge else { return 0 }
-        return min(10.0, max(0.0, (edge / 5.0) * 10.0))
+        guard let edge = player.edge, let line = player.mainProp?.line, line > 0 else { return 0 }
+        return min(10.0, (abs(edge) / line) * 40.0)
     }
 
     private var hitRateScore: Double {
         guard let hr = player.hitRate, hr.total > 0 else { return 5.0 }
-        return (Double(hr.hits) / Double(hr.total)) * 10.0
+        let directionalPct = player.recommendedDirection == "Under" ? (1.0 - hr.weightedPct) : hr.weightedPct
+        return directionalPct * 10.0
     }
 
     private var oddsScore: Double {
-        let odds = player.overOdds ?? -110
+        // Direction-aware: use the odds matching the recommendation
+        let odds: Int
+        if player.recommendedDirection == "Under" {
+            odds = player.underOdds ?? -110
+        } else {
+            odds = player.overOdds ?? -110
+        }
         if odds >= 100 { return 10.0 }
         else if odds >= -105 { return 8.0 }
         else if odds >= -110 { return 5.0 }
@@ -501,7 +512,10 @@ struct RankingBreakdownSheet: View {
 
     private var lineupMultiplier: String? {
         if player.lineupStatus == "GTD" { return "0.4x (Game-Time Decision)" }
-        if player.lineupStatus == "STARTING" { return "1.1x (Confirmed Starter)" }
+        if player.lineupStatus == "STARTING" {
+            let label = player.recommendedDirection == "Over" ? "1.1x boost" : "0.95x risk penalty"
+            return "\(label) (Confirmed Starter)"
+        }
         return nil
     }
 
@@ -509,11 +523,33 @@ struct RankingBreakdownSheet: View {
         guard let td = player.trendData else { return nil }
         if td.trend == "declining" {
             let penalty = min(30.0, td.declinePct)
-            return "-\(String(format: "%.0f", penalty))% (Declining)"
+            let direction = player.recommendedDirection == "Over" ? "penalty" : "boost"
+            return "\(direction) based on \(String(format: "%.0f", penalty))% decline"
         } else if td.trend == "surging" {
-            return "1.05x (Surging)"
+            let direction = player.recommendedDirection == "Over" ? "1.05x boost" : "0.95x risk penalty"
+            return "\(direction) (Surging)"
         }
         return nil
+    }
+
+    private var homeAwayModifier: String? {
+        guard let mod = player.homeAwayModifier, mod != 1.0 else { return nil }
+        let venue = player.isHome == true ? "Home" : "Away"
+        let impact = mod > 1.0 ? "boost" : "penalty"
+        return String(format: "%.2fx (%@ %@)", mod, venue, impact)
+    }
+
+    private var minutesModifier: String? {
+        guard let mod = player.minutesConfidence, mod != 1.0 else { return nil }
+        let mpg = player.avgMinutes.map { String(format: "%.1f MPG", $0) } ?? ""
+        let impact = mod > 1.0 ? "Volume boost" : "Volume penalty"
+        return String(format: "%.2fx (%@ %@)", mod, mpg, impact)
+    }
+    
+    private var usageVacuumModifier: String? {
+        guard let mod = player.usageVacuum, mod != 1.0 else { return nil }
+        let directionLabel = player.recommendedDirection == "Over" ? "Usage boost" : "Usage penalty"
+        return String(format: "%.2fx (%@ - Missing teammates)", mod, directionLabel)
     }
 
     var body: some View {
@@ -540,10 +576,11 @@ struct RankingBreakdownSheet: View {
                         hitRateRow
                         efficiencyRow
                         oddsRow
+                        usageVacuumRow
                     }
 
                     // Modifiers
-                    if lineupMultiplier != nil || trendModifier != nil {
+                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil {
                         Divider().background(Color.border)
                         modifiersSection
                     }
@@ -624,13 +661,17 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v4)")
+            Text("Formula (v6)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
-            Text("(Edge x 0.35) + (Matchup x 0.20) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
+            Text("(Edge x 0.35) + (Matchup x 0.20-25) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.8))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Directional Modifiers: Lineup, Trend, Venue, Volume, Usage Vacuum")
+                .font(.caption2)
+                .foregroundStyle(Color.secondaryText.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
@@ -655,15 +696,16 @@ struct RankingBreakdownSheet: View {
     private var edgeDetails: String {
         guard let avg = player.playerAverage, let line = player.mainProp?.line else { return "No data" }
         let edge = player.edge ?? (avg - line)
-        let sign = edge >= 0 ? "+" : ""
-        return "Avg \(String(format: "%.1f", avg)) vs Line \(String(format: "%.1f", line)) = \(sign)\(String(format: "%.1f", edge)) edge"
+        let pct = (abs(edge) / (line > 0 ? line : 1)) * 100
+        let dir = edge >= 0 ? "above" : "below"
+        return "Avg \(String(format: "%.1f", avg)) is \(String(format: "%.1f%%", pct)) \(dir) the line (\(String(format: "%.1f", line)))"
     }
 
     private var matchupRow: some View {
         ComponentRow(
             icon: "shield.lefthalf.filled",
             label: "Matchup",
-            weight: "20%",
+            weight: "20-25%",
             score: player.matchupScore ?? 5.0,
             color: .brandBlue,
             details: matchupDetails
@@ -697,8 +739,16 @@ struct RankingBreakdownSheet: View {
 
     private var hitRateDetails: String {
         guard let hr = player.hitRate, hr.total > 0 else { return "No recent data" }
-        let games = hr.results.map { $0.hit ? "HIT" : "MISS" }.joined(separator: ", ")
-        return "\(hr.hits)/\(hr.total) last games (\(games))"
+        let isUnder = player.recommendedDirection == "Under"
+        let directionHits = isUnder ? (hr.total - hr.hits) : hr.hits
+        let games = hr.results.prefix(5).map { result in
+            let confirmsDirection = isUnder ? !result.hit : result.hit
+            return confirmsDirection ? "HIT" : "MISS"
+        }.joined(separator: ", ")
+        let directionalPct = isUnder ? (1.0 - hr.weightedPct) : hr.weightedPct
+        let weightedStr = String(format: "%.0f%%", directionalPct * 100)
+        let dirLabel = isUnder ? "Under" : "Over"
+        return "\(directionHits)/\(hr.total) \(dirLabel) | Weighted: \(weightedStr) (\(games))"
     }
 
     private var efficiencyRow: some View {
@@ -734,7 +784,13 @@ struct RankingBreakdownSheet: View {
     }
 
     private var oddsDetails: String {
-        let odds = player.overOdds ?? -110
+        let direction = player.recommendedDirection ?? "Over"
+        let odds: Int
+        if direction == "Under" {
+            odds = player.underOdds ?? -110
+        } else {
+            odds = player.overOdds ?? -110
+        }
         let formatted = odds > 0 ? "+\(odds)" : "\(odds)"
         let tier: String
         if odds >= 100 { tier = "Plus Money" }
@@ -742,7 +798,39 @@ struct RankingBreakdownSheet: View {
         else if odds >= -110 { tier = "Standard" }
         else if odds >= -120 { tier = "Below Avg" }
         else { tier = "Poor Value" }
-        return "Over odds: \(formatted) (\(tier))"
+        return "\(direction) odds: \(formatted) (\(tier))"
+    }
+    
+    private var usageVacuumRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let mod = player.usageVacuum, mod != 1.0 {
+                HStack {
+                    Image(systemName: "person.3.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandEmerald)
+                        .frame(width: 16)
+                    Text("Usage Vacuum")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("Impact: \(String(format: "%.2fx", mod))")
+                        .font(.caption2)
+                        .foregroundStyle(Color.brandEmerald)
+                }
+                Text("Missing teammates opening up \(String(format: "%.0f%%", (mod - 1.0) * 100)) usage potential.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(modExists ? 10 : 0)
+        .background(modExists ? Color.surface : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    
+    private var modExists: Bool {
+        return (player.usageVacuum ?? 1.0) != 1.0
     }
 
     // MARK: - Modifiers
@@ -771,6 +859,39 @@ struct RankingBreakdownSheet: View {
                         .font(.caption)
                         .foregroundStyle(player.trendData?.trend == "surging" ? Color.brandEmerald : Color.brandRed)
                     Text("Trend: \(trend)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let ha = homeAwayModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: player.isHome == true ? "house.fill" : "airplane")
+                        .font(.caption)
+                        .foregroundStyle((player.homeAwayModifier ?? 1.0) >= 1.0 ? Color.brandEmerald : Color.brandRed)
+                    Text("Venue: \(ha)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let mins = minutesModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.fill")
+                        .font(.caption)
+                        .foregroundStyle((player.minutesConfidence ?? 1.0) >= 1.0 ? Color.brandEmerald : Color.brandOrange)
+                    Text("Volume: \(mins)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+            
+            if let uv = usageVacuumModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.3.sequence.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandEmerald)
+                    Text("Teammates: \(uv)")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                 }

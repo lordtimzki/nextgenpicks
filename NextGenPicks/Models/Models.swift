@@ -72,23 +72,29 @@ struct HitRateGame: Codable {
     }
 }
 
-// Hit rate data for last 5 games
+// Hit rate data (up to 10 games, recency-weighted)
 struct HitRate: Codable {
     let hits: Int
     let total: Int
     let results: [HitRateGame]
+    let weightedPct: Double
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.hits = try container.decodeIfPresent(Int.self, forKey: .hits) ?? 0
         self.total = try container.decodeIfPresent(Int.self, forKey: .total) ?? 0
         self.results = try container.decodeIfPresent([HitRateGame].self, forKey: .results) ?? []
+
+        if let d = try? container.decode(Double.self, forKey: .weightedPct) { self.weightedPct = d }
+        else if let i = try? container.decode(Int.self, forKey: .weightedPct) { self.weightedPct = Double(i) }
+        else { self.weightedPct = 0 }
     }
 
-    init(hits: Int, total: Int, results: [HitRateGame]) {
+    init(hits: Int, total: Int, results: [HitRateGame], weightedPct: Double = 0) {
         self.hits = hits
         self.total = total
         self.results = results
+        self.weightedPct = weightedPct
     }
 }
 
@@ -96,6 +102,7 @@ struct PlayerAverages: Codable {
     let pts: Double
     let reb: Double
     let ast: Double
+    let fg3m: Double
 
     // Custom decoder to handle Int or Double from Firestore
     init(from decoder: Decoder) throws {
@@ -127,13 +134,23 @@ struct PlayerAverages: Codable {
         } else {
             self.ast = 0
         }
+
+        // Handle fg3m as Double or Int
+        if let doubleFg3m = try? container.decode(Double.self, forKey: .fg3m) {
+            self.fg3m = doubleFg3m
+        } else if let intFg3m = try? container.decode(Int.self, forKey: .fg3m) {
+            self.fg3m = Double(intFg3m)
+        } else {
+            self.fg3m = 0
+        }
     }
 
     // Regular initializer for programmatic creation
-    init(pts: Double, reb: Double, ast: Double) {
+    init(pts: Double, reb: Double, ast: Double, fg3m: Double = 0) {
         self.pts = pts
         self.reb = reb
         self.ast = ast
+        self.fg3m = fg3m
     }
 }
 
@@ -303,6 +320,13 @@ struct PlayerCardData: Identifiable, Codable {
     var oppInjuries: String?
     var opponentAbbr: String?
 
+    // v5 ranking fields
+    var isHome: Bool?
+    var homeAwayModifier: Double?
+    var minutesConfidence: Double?
+    var avgMinutes: Double?
+    var usageVacuum: Double?
+
     // Computed property: get the main prop (either from single prop fields or first of array)
     var mainProp: PlayerProp? {
         // If we have single prop fields, create a PlayerProp from them
@@ -335,7 +359,8 @@ struct PlayerCardData: Identifiable, Codable {
          section: PropSection? = nil, player_id: String? = nil, recommendedDirection: String? = nil,
          matchupScore: Double? = nil, oppDefRank: Int? = nil, oppPaceRank: Int? = nil,
          efficiencyScore: Double? = nil, playerAdvanced: PlayerAdvanced? = nil,
-         restStatus: String? = nil, teamInjuries: String? = nil, oppInjuries: String? = nil, opponentAbbr: String? = nil) {
+         restStatus: String? = nil, teamInjuries: String? = nil, oppInjuries: String? = nil, opponentAbbr: String? = nil,
+         isHome: Bool? = nil, homeAwayModifier: Double? = nil, minutesConfidence: Double? = nil, avgMinutes: Double? = nil, usageVacuum: Double? = nil) {
         // Accept Int or String for id
         if let intId = id as? Int {
             self.id = String(intId)
@@ -384,6 +409,11 @@ struct PlayerCardData: Identifiable, Codable {
         self.teamInjuries = teamInjuries
         self.oppInjuries = oppInjuries
         self.opponentAbbr = opponentAbbr
+        self.isHome = isHome
+        self.homeAwayModifier = homeAwayModifier
+        self.minutesConfidence = minutesConfidence
+        self.avgMinutes = avgMinutes
+        self.usageVacuum = usageVacuum
     }
 
     // Custom decoder to handle id being either Int or String in Firebase
@@ -495,5 +525,24 @@ struct PlayerCardData: Identifiable, Codable {
         self.teamInjuries = try container.decodeIfPresent(String.self, forKey: .teamInjuries)
         self.oppInjuries = try container.decodeIfPresent(String.self, forKey: .oppInjuries)
         self.opponentAbbr = try container.decodeIfPresent(String.self, forKey: .opponentAbbr)
+
+        // v5 ranking fields
+        self.isHome = try container.decodeIfPresent(Bool.self, forKey: .isHome)
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .homeAwayModifier) { self.homeAwayModifier = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .homeAwayModifier) { self.homeAwayModifier = Double(i) }
+        else { self.homeAwayModifier = nil }
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .minutesConfidence) { self.minutesConfidence = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .minutesConfidence) { self.minutesConfidence = Double(i) }
+        else { self.minutesConfidence = nil }
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .avgMinutes) { self.avgMinutes = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .avgMinutes) { self.avgMinutes = Double(i) }
+        else { self.avgMinutes = nil }
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .usageVacuum) { self.usageVacuum = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .usageVacuum) { self.usageVacuum = Double(i) }
+        else { self.usageVacuum = nil }
     }
 }

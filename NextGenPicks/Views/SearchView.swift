@@ -7,6 +7,7 @@ enum SearchTab: String, CaseIterable {
 
 struct SearchView: View {
     @EnvironmentObject var vm: DataViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var searchText: String = ""
     @State private var selectedTab: SearchTab = .players
 
