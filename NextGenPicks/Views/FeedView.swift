@@ -2,7 +2,8 @@ import SwiftUI
 
 struct FeedView: View {
     @EnvironmentObject var vm: DataViewModel
-    
+    @State private var showSearch = false
+
     // Grid Setup: 2 Columns
     let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -45,18 +46,24 @@ struct FeedView: View {
                             if !vm.forYouProps.isEmpty {
                                 VStack(alignment: .leading, spacing: 12) {
                                     HStack {
-                                        Text("For You")
+                                        Text("Top Picks")
                                             .font(.title3)
                                             .fontWeight(.bold)
                                             .foregroundStyle(.white)
 
                                         Spacer()
 
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "star.fill")
-                                                .font(.caption)
-                                            Text("Top 4 Picks")
-                                                .font(.caption)
+                                        HStack {
+                                            Button{
+                                                showSearch = true
+                                            } label: {
+                                                Image(systemName: "magnifyingglass")
+                                                    .font(.title)
+                                                    .foregroundStyle(.white)
+                                                    .padding(10)
+                                                    .background(Color.white.opacity(0.1))
+                                                    .clipShape(Circle())
+                                            }
                                         }
                                         .foregroundStyle(Color.brandOrange)
                                     }
@@ -128,6 +135,10 @@ struct FeedView: View {
             .task {
                 await vm.loadInitialData()
             }
+        }
+        .fullscreenCover(isPresented: $showSearch) {
+            SearchView()
+                .environmentObject(vm)
         }
     }
 }

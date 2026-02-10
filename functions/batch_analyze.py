@@ -1418,21 +1418,23 @@ def calculate_trend_score(last5_games: list, stat_name: str) -> dict:
 
 
 
-def _determine_trending_status(prop_score: float, trend_data: dict, hit_rate: dict) -> str:
+def _determine_trending_status(prop_score: float, trend_data: dict, hit_rate: dict, recommended_direction: str = "Over") -> str:
     """
     Determine trending badge status for a prop card.
 
-    HOT: prop_score >= 7.5 AND trend == "surging" AND weightedPct >= 0.60
-    FADE: trend == "declining" with decline_pct >= 25 AND weightedPct < 0.35
+    HOT: prop_score >= 7.5 AND trend == "surging" AND directional weightedPct >= 0.60
+    FADE: trend == "declining" with decline_pct >= 25 AND directional weightedPct < 0.35
     UP: everything else (default)
     """
     trend = trend_data.get("trend", "stable")
     weighted_pct = hit_rate.get("weightedPct", 0.0)
+    # weightedPct is always Over-direction; flip for Under picks
+    directional_pct = (1.0 - weighted_pct) if recommended_direction == "Under" else weighted_pct
     decline_pct = trend_data.get("decline_pct", 0)
 
-    if prop_score >= 7.5 and trend == "surging" and weighted_pct >= 0.60:
+    if prop_score >= 7.5 and trend == "surging" and directional_pct >= 0.60:
         return "hot"
-    elif trend == "declining" and decline_pct >= 25 and weighted_pct < 0.35:
+    elif trend == "declining" and decline_pct >= 25 and directional_pct < 0.35:
         return "fade"
     return "up"
 
@@ -1863,7 +1865,7 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 under_odds = -110
 
             # Determine HOT/FADE/UP trending status
-            trending_status = _determine_trending_status(prop_score, trend_data, hit_rate)
+            trending_status = _determine_trending_status(prop_score, trend_data, hit_rate, recommended_direction)
 
             # Compute new modifiers for Firestore storage
             consistency_mod, cv_value = calculate_consistency_modifier(game_log, stat_name, recommended_direction)
