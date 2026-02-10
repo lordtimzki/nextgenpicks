@@ -55,7 +55,7 @@ struct FeedView: View {
                                         HStack(spacing: 4) {
                                             Image(systemName: "star.fill")
                                                 .font(.caption)
-                                            Text("Recommended")
+                                            Text("Top 4 Picks")
                                                 .font(.caption)
                                         }
                                         .foregroundStyle(Color.brandOrange)

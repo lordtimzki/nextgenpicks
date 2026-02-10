@@ -484,8 +484,8 @@ struct RankingBreakdownSheet: View {
 
     // Recompute component scores from stored data to show the math
     private var edgeScore: Double {
-        guard let edge = player.edge else { return 0 }
-        return min(10.0, (abs(edge) / 5.0) * 10.0)
+        guard let edge = player.edge, let line = player.mainProp?.line, line > 0 else { return 0 }
+        return min(10.0, (abs(edge) / line) * 40.0)
     }
 
     private var hitRateScore: Double {
@@ -511,7 +511,10 @@ struct RankingBreakdownSheet: View {
 
     private var lineupMultiplier: String? {
         if player.lineupStatus == "GTD" { return "0.4x (Game-Time Decision)" }
-        if player.lineupStatus == "STARTING" { return "1.1x (Confirmed Starter)" }
+        if player.lineupStatus == "STARTING" {
+            let label = player.recommendedDirection == "Over" ? "1.1x boost" : "0.95x risk penalty"
+            return "\(label) (Confirmed Starter)"
+        }
         return nil
     }
 
@@ -519,9 +522,11 @@ struct RankingBreakdownSheet: View {
         guard let td = player.trendData else { return nil }
         if td.trend == "declining" {
             let penalty = min(30.0, td.declinePct)
-            return "-\(String(format: "%.0f", penalty))% (Declining)"
+            let direction = player.recommendedDirection == "Over" ? "penalty" : "boost"
+            return "\(direction) based on \(String(format: "%.0f", penalty))% decline"
         } else if td.trend == "surging" {
-            return "1.05x (Surging)"
+            let direction = player.recommendedDirection == "Over" ? "1.05x boost" : "0.95x risk penalty"
+            return "\(direction) (Surging)"
         }
         return nil
     }
@@ -529,13 +534,21 @@ struct RankingBreakdownSheet: View {
     private var homeAwayModifier: String? {
         guard let mod = player.homeAwayModifier, mod != 1.0 else { return nil }
         let venue = player.isHome == true ? "Home" : "Away"
-        return String(format: "%.2fx (%@ boost)", mod, venue)
+        let impact = mod > 1.0 ? "boost" : "penalty"
+        return String(format: "%.2fx (%@ %@)", mod, venue, impact)
     }
 
     private var minutesModifier: String? {
         guard let mod = player.minutesConfidence, mod != 1.0 else { return nil }
         let mpg = player.avgMinutes.map { String(format: "%.1f MPG", $0) } ?? ""
-        return String(format: "%.2fx (%@)", mod, mpg)
+        let impact = mod > 1.0 ? "Volume boost" : "Volume penalty"
+        return String(format: "%.2fx (%@ %@)", mod, mpg, impact)
+    }
+    
+    private var usageVacuumModifier: String? {
+        guard let mod = player.usageVacuum, mod != 1.0 else { return nil }
+        let directionLabel = player.recommendedDirection == "Over" ? "Usage boost" : "Usage penalty"
+        return String(format: "%.2fx (%@ - Missing teammates)", mod, directionLabel)
     }
 
     var body: some View {
@@ -562,10 +575,11 @@ struct RankingBreakdownSheet: View {
                         hitRateRow
                         efficiencyRow
                         oddsRow
+                        usageVacuumRow
                     }
 
                     // Modifiers
-                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil {
+                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil {
                         Divider().background(Color.border)
                         modifiersSection
                     }
@@ -646,15 +660,15 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v5)")
+            Text("Formula (v6)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
-            Text("(Edge x 0.35) + (Matchup x 0.20) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
+            Text("(Edge x 0.35) + (Matchup x 0.20-25) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Then apply modifiers: Lineup, Trend, Home/Away, Minutes")
+            Text("Directional Modifiers: Lineup, Trend, Venue, Volume, Usage Vacuum")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
@@ -681,15 +695,16 @@ struct RankingBreakdownSheet: View {
     private var edgeDetails: String {
         guard let avg = player.playerAverage, let line = player.mainProp?.line else { return "No data" }
         let edge = player.edge ?? (avg - line)
-        let sign = edge >= 0 ? "+" : ""
-        return "Avg \(String(format: "%.1f", avg)) vs Line \(String(format: "%.1f", line)) = \(sign)\(String(format: "%.1f", edge)) edge"
+        let pct = (abs(edge) / (line > 0 ? line : 1)) * 100
+        let dir = edge >= 0 ? "above" : "below"
+        return "Avg \(String(format: "%.1f", avg)) is \(String(format: "%.1f%%", pct)) \(dir) the line (\(String(format: "%.1f", line)))"
     }
 
     private var matchupRow: some View {
         ComponentRow(
             icon: "shield.lefthalf.filled",
             label: "Matchup",
-            weight: "20%",
+            weight: "20-25%",
             score: player.matchupScore ?? 5.0,
             color: .brandBlue,
             details: matchupDetails
@@ -784,6 +799,38 @@ struct RankingBreakdownSheet: View {
         else { tier = "Poor Value" }
         return "\(direction) odds: \(formatted) (\(tier))"
     }
+    
+    private var usageVacuumRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let mod = player.usageVacuum, mod != 1.0 {
+                HStack {
+                    Image(systemName: "person.3.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandEmerald)
+                        .frame(width: 16)
+                    Text("Usage Vacuum")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("Impact: \(String(format: "%.2fx", mod))")
+                        .font(.caption2)
+                        .foregroundStyle(Color.brandEmerald)
+                }
+                Text("Missing teammates opening up \(String(format: "%.0f%%", (mod - 1.0) * 100 * 2)) usage potential.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(modExists ? 10 : 0)
+        .background(modExists ? Color.surface : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    
+    private var modExists: Bool {
+        return (player.usageVacuum ?? 1.0) != 1.0
+    }
 
     // MARK: - Modifiers
 
@@ -832,7 +879,18 @@ struct RankingBreakdownSheet: View {
                     Image(systemName: "clock.fill")
                         .font(.caption)
                         .foregroundStyle((player.minutesConfidence ?? 1.0) >= 1.0 ? Color.brandEmerald : Color.brandOrange)
-                    Text("Minutes: \(mins)")
+                    Text("Volume: \(mins)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+            
+            if let uv = usageVacuumModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.3.sequence.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandEmerald)
+                    Text("Teammates: \(uv)")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                 }

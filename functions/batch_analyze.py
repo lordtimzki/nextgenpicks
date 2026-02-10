@@ -14,7 +14,7 @@ import uuid
 from datetime import timezone
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats
+from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats, get_all_player_bio_stats
 
 # Note: Firebase is initialized in main.py which imports this module
 
@@ -432,14 +432,17 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   opp_pace_rank: int = None,
                                   player_advanced: dict = None,
                                   is_home: bool = None,
-                                  game_log: list = None) -> tuple:
+                                  game_log: list = None,
+                                  usage_vacuum_modifier: float = 1.0) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score,
              recommended_direction, ha_modifier, min_modifier)
 
-    Formula v5: (edge * 0.35) + (matchup * 0.20) + (hitRate * 0.20) + (efficiency * 0.10) + (odds * 0.15)
-    Then apply modifiers: lineup, trend, home/away, minutes confidence.
+    Formula v6: 
+    - Scale-invariant Edge Scoring
+    - Direction-aware modifiers (minutes, lineup, usage vacuum)
+    - Matchup weighting (v5 base)
     """
     stat = prop.get("stat_name", "")
     line = float(prop.get("line", 0))
@@ -457,68 +460,109 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     if lineup_status == "OUT":
         return 0.0, 0.0, round(player_avg, 1), 0.0, None, 1.0, 1.0
 
-    # 1. Edge Score - bidirectional: rewards both Over AND Under signals
+    # 1. Edge Score - Scale-Invariant (Percentage based)
     edge = player_avg - line if player_avg > 0 else 0
-    edge_score = min(10.0, (abs(edge) / 5.0) * 10.0)
+    
+    # Avoid division by zero
+    safe_line = line if line > 0.1 else 1.0
+    pct_edge = abs(edge) / safe_line
+    
+    # 25% edge = 10.0 score. (0.25 * 40 = 10)
+    edge_score = min(10.0, pct_edge * 40.0)
 
     # Determine recommendation
     recommended_direction = None
     if player_avg > 0:
         recommended_direction = "Over" if player_avg > line else "Under"
 
-    # 2. Hit Rate Score - direction-aware recency-weighted consistency
-    #    weighted_pct = Over hit rate.  For Under recs, flip to Under hit rate.
+    # 2. Hit Rate Score
     hit_rate_score = 5.0  # default neutral
     if hit_rate and hit_rate.get("total", 0) > 0:
         weighted_pct = hit_rate.get("weightedPct", hit_rate["hits"] / hit_rate["total"])
         directional_pct = (1.0 - weighted_pct) if recommended_direction == "Under" else weighted_pct
         hit_rate_score = directional_pct * 10.0
 
-    # 3. Player Efficiency Score - stat-aware using advanced stats
+    # 3. Player Efficiency Score
     efficiency_score = calculate_player_efficiency_score(stat, player_advanced)
 
-    # 4. Urgency Score (returned but not in formula)
+    # 4. Urgency Score
     urgency_score = calculate_urgency_score(game_time_utc)
 
-    # 5. Odds Value Score - direction-aware (uses the odds matching recommendation)
+    # 5. Odds Value Score
     over_odds_val = _parse_odds(prop.get("over_american", "-110"))
     under_odds_val = _parse_odds(prop.get("under_american", "-110"))
     relevant_odds = under_odds_val if recommended_direction == "Under" else over_odds_val
     odds_score = _odds_tier_score(relevant_odds)
 
-    # 6. Matchup Score - direction-aware opponent quality
+    # 6. Matchup Score
     matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction)
+    
+    # Boost matchup weight if extreme outlier
+    matchup_weight = 0.20
+    if (opp_def_rank and opp_def_rank >= 28 and recommended_direction == "Over") or \
+       (opp_def_rank and opp_def_rank <= 3 and recommended_direction == "Under"):
+        matchup_weight = 0.25
 
-    # Calculate base total score (v4 weights)
-    total = (edge_score * 0.35) + (matchup_score * 0.20) + (hit_rate_score * 0.20) + (efficiency_score * 0.10) + (odds_score * 0.15)
+    # Calculate base total score (v6 weights)
+    # Adjust weights slightly to accommodate dynamic matchup weight
+    # Base: Edge 35%, HitRate 20%, Matchup 20-25%, Odds 15%, Eff 10%
+    # Sum might exceed 1.0 slightly, we normalize at end implicitly by clamping
+    total = (edge_score * 0.35) + (matchup_score * matchup_weight) + (hit_rate_score * 0.20) + (efficiency_score * 0.10) + (odds_score * 0.15)
 
-    # Apply lineup modifiers
+    # Apply lineup modifiers - DIRECTION AWARE
     if lineup_status == "GTD":
         total *= 0.4
     elif lineup_status == "STARTING":
-        total = min(10.0, total * 1.1)
+        if recommended_direction == "Over":
+            total = min(10.0, total * 1.1) # Boost Over for starters
+        else:
+            total *= 0.95 # Slight penalty for Under for starters (more minutes risk)
 
     # Apply trend modifier
     if trend_data:
         trend = trend_data.get("trend", "stable")
         if trend == "declining":
             decline_pct = trend_data.get("decline_pct", 0)
-            # Penalty up to 30% proportional to decline magnitude
             penalty = min(0.30, decline_pct / 100.0)
-            total *= (1.0 - penalty)
+            if recommended_direction == "Over":
+                total *= (1.0 - penalty)
+            else:
+                total *= (1.0 + (penalty * 0.5)) # Slight boost for Under if declining
         elif trend == "surging":
-            total = min(10.0, total * 1.05)
+            if recommended_direction == "Over":
+                total = min(10.0, total * 1.05)
+            else:
+                total *= 0.95
 
     # Apply home/away modifier (0.92 - 1.08), direction-aware
-    ha_modifier = calculate_home_away_modifier(game_log or [], stat, is_home)
-    # Flip for Under: if player performs better at venue (1.08), that hurts Under → 0.92
+    raw_ha_mod = calculate_home_away_modifier(game_log or [], stat, is_home)
     if recommended_direction == "Under":
-        ha_modifier = max(0.92, min(1.08, 2.0 - ha_modifier))
+        # If player performs BETTER at venue (raw > 1.0), it's BAD for Under (penalty < 1.0)
+        # If player performs WORSE at venue (raw < 1.0), it's GOOD for Under (boost > 1.0)
+        ha_modifier = max(0.92, min(1.08, 1.0 / raw_ha_mod if raw_ha_mod > 0.5 else 1.0))
+    else:
+        ha_modifier = raw_ha_mod
     total *= ha_modifier
 
-    # Apply minutes confidence modifier (0.93 - 1.05)
-    min_modifier, _ = calculate_minutes_confidence(game_log or [])
+    # Apply minutes confidence modifier - DIRECTION AWARE
+    raw_min_mod, avg_min = calculate_minutes_confidence(game_log or [])
+    if recommended_direction == "Under":
+        # High minutes is BAD for Under (penalty < 1.0)
+        # Low minutes is GOOD for Under (boost > 1.0)
+        min_modifier = max(0.90, min(1.10, 1.0 / raw_min_mod if raw_min_mod > 0.5 else 1.0))
+    else:
+        min_modifier = raw_min_mod
+            
     total *= min_modifier
+    
+    # Apply Usage Vacuum Modifier (Teammates OUT)
+    # usage_vacuum_modifier > 1.0 means teammates are out
+    if usage_vacuum_modifier != 1.0:
+        if recommended_direction == "Over":
+            total *= usage_vacuum_modifier
+        else:
+            # Penalty for Under if usage opens up
+            total *= (1.0 / usage_vacuum_modifier)
 
     # Final clamp
     total = max(0.0, min(10.0, total))
@@ -584,7 +628,15 @@ def calculate_player_efficiency_score(stat_name: str, player_advanced: dict = No
 
     stat_lower = stat_name.lower()
 
-    if "3-pointer" in stat_lower or "3pm" in stat_lower or "point" in stat_lower or "pts" in stat_lower:
+    # Combined stats MUST be checked first — "Pts + Rebs + Asts" contains "pts"/"reb"/"ast"
+    if "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        # PRA: weighted blend
+        pts_score = (normalize(usg, 0.10, 0.35) * 0.60) + (normalize(ts, 0.45, 0.70) * 0.40)
+        reb_score = normalize(reb, 0.03, 0.20)
+        ast_score = normalize(ast, 0.03, 0.45)
+        return round((pts_score * 0.50) + (reb_score * 0.25) + (ast_score * 0.25), 2)
+
+    elif "3-pointer" in stat_lower or "3pm" in stat_lower or "point" in stat_lower or "pts" in stat_lower:
         # Points / 3PM: usage rate + shooting efficiency
         usg_score = normalize(usg, 0.10, 0.35)
         ts_score = normalize(ts, 0.45, 0.70)
@@ -596,18 +648,60 @@ def calculate_player_efficiency_score(stat_name: str, player_advanced: dict = No
     elif "assist" in stat_lower or "ast" in stat_lower:
         return round(normalize(ast, 0.03, 0.45), 2)
 
-    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
-        # PRA: weighted blend
-        pts_score = (normalize(usg, 0.10, 0.35) * 0.60) + (normalize(ts, 0.45, 0.70) * 0.40)
-        reb_score = normalize(reb, 0.03, 0.20)
-        ast_score = normalize(ast, 0.03, 0.45)
-        return round((pts_score * 0.50) + (reb_score * 0.25) + (ast_score * 0.25), 2)
-
     return 5.0
 
 
+def calculate_usage_vacuum_score(team_abbr: str, injuries_cache: dict, team_rosters: dict) -> float:
+    """
+    Calculate a modifier based on missing teammate usage (Usage Vacuum).
+    If high-usage players are OUT, remaining players get a boost.
+    Returns modifier 1.0 - 1.2.
+    """
+    if not team_abbr or team_abbr not in team_rosters:
+        return 1.0
+
+    missing_usage = 0.0
+    roster = team_rosters[team_abbr] # List of {id, usg}
+    
+    # Get list of injured names/status for this team
+    team_injuries = injuries_cache.get(team_abbr, [])
+    # Map injury names to lower for matching
+    injured_map = {i.get("name", "").lower(): i.get("status", "") for i in team_injuries}
+
+    # We need to match roster IDs to names to check injuries...
+    # Actually `team_rosters` should probably contain names or we need a way to link them.
+    # The `injuries_cache` uses names (e.g. "LeBron James").
+    # `team_rosters` is built from bio_stats which has ID but maybe not full name?
+    # We should ensure `team_rosters` has names.
+    
+    for player in roster:
+        p_name = player.get("name", "").lower()
+        p_usg = player.get("usg", 0.0)
+        
+        # Check if this player is OUT
+        if p_name in injured_map:
+            status = injured_map[p_name].lower()
+            if "out" in status:
+                missing_usage += p_usg
+
+    # Calculate modifier
+    if missing_usage >= 0.40:
+        return 1.20
+    elif missing_usage >= 0.30:
+        return 1.15
+    elif missing_usage >= 0.20:
+        return 1.05
+    elif missing_usage >= 0.15:
+        return 1.02
+        
+    return 1.0
+
+
 def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
-                            lineup_status: str = "", last5_games: list = None) -> tuple:
+                            lineup_status: str = "", last5_games: list = None,
+                            usage_vacuum_modifier: float = 1.0,
+                            is_home: bool = None,
+                            game_log: list = None) -> tuple:
     """
     Calculate ranking score for a player (legacy - finds best prop score).
     Returns (total_score, component_scores)
@@ -629,12 +723,18 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
             prop, averages, game_time_utc,
             lineup_status=lineup_status,
             hit_rate=hit_rate,
-            trend_data=trend_data
+            trend_data=trend_data,
+            usage_vacuum_modifier=usage_vacuum_modifier,
+            is_home=is_home,
+            game_log=game_log
         )
         if score > best_score:
             best_score = score
+            # Normalize edge for display component (0-10 scale approximation)
+            display_edge = min(10.0, (abs(edge) / (line if line > 0 else 1)) * 40.0)
+            
             best_components = {
-                "edge": round(min(10.0, max(0.0, (edge / 5.0) * 10.0)), 2),
+                "edge": round(display_edge, 2),
                 "efficiency": round(calculate_player_efficiency_score(stat_name), 2),
                 "odds": 5.0
             }
@@ -955,7 +1055,7 @@ def _fuzzy_find_player(player_name: str) -> dict | None:
     return None
 
 
-def get_player_stats_quick(player_name: str) -> dict | None:
+def get_player_stats_quick(player_name: str, bio_cache: dict = None) -> dict | None:
     """Get basic player stats from NBA API including last 5 games for hit rate."""
     import time
     try:
@@ -970,19 +1070,26 @@ def get_player_stats_quick(player_name: str) -> dict | None:
         player_id = player['id']
 
         # Small delay to avoid NBA API rate limiting (429s / connection drops)
-        time.sleep(0.6)
+        if not bio_cache:
+            time.sleep(0.6)
 
         position = "N/A"
         current_team = ""
-        try:
-            player_info = commonplayerinfo.CommonPlayerInfo(
-                player_id=player_id)
-            info = player_info.get_normalized_dict()['CommonPlayerInfo']
-            if info:
-                position = str(info[0].get('POSITION', 'N/A'))
-                current_team = str(info[0].get('TEAM_ABBREVIATION', ''))
-        except:
-            pass
+        
+        # Optimization: Use bio_cache if available
+        if bio_cache and player_id in bio_cache:
+            position = bio_cache[player_id].get("position", "N/A")
+            current_team = bio_cache[player_id].get("team_abbr", "")
+        else:
+            try:
+                player_info = commonplayerinfo.CommonPlayerInfo(
+                    player_id=player_id)
+                info = player_info.get_normalized_dict()['CommonPlayerInfo']
+                if info:
+                    position = str(info[0].get('POSITION', 'N/A'))
+                    current_team = str(info[0].get('TEAM_ABBREVIATION', ''))
+            except:
+                pass
 
         try:
             log = playergamelog.PlayerGameLog(
@@ -1087,7 +1194,10 @@ def _odds_tier_score(odds_val: int) -> float:
 def _resolve_stat_key(stat_name: str) -> str | None:
     """Map a display stat name to its game-log dict key."""
     stat_lower = stat_name.lower()
-    if "3-pointer" in stat_lower or "3pm" in stat_lower:
+    # Combined stats MUST be checked first — "Pts + Rebs + Asts" contains "pts"/"reb"/"ast"
+    if "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        return "pra"
+    elif "3-pointer" in stat_lower or "3pm" in stat_lower:
         return "fg3m"
     elif "point" in stat_lower or "pts" in stat_lower:
         return "pts"
@@ -1095,8 +1205,6 @@ def _resolve_stat_key(stat_name: str) -> str | None:
         return "reb"
     elif "assist" in stat_lower or "ast" in stat_lower:
         return "ast"
-    elif "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
-        return "pra"
     return None
 
 
@@ -1281,6 +1389,28 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     player_advanced_cache = get_all_player_advanced_stats()
     print(f"✓ Cached advanced stats for {len(player_advanced_cache)} players")
 
+    # 2.56. Fetch player bio stats (Position, Team) for roster mapping
+    print("📊 Fetching player bio stats...")
+    bio_cache = get_all_player_bio_stats()
+    print(f"✓ Cached bio stats for {len(bio_cache)} players")
+    
+    # Build team rosters for Usage Vacuum calculation
+    team_rosters = {}
+    for pid, bio in bio_cache.items():
+        team = bio.get("team_abbr")
+        if not team: continue
+        if team not in team_rosters: team_rosters[team] = []
+        
+        usg = 0.0
+        if pid in player_advanced_cache:
+            usg = player_advanced_cache[pid].get("usg_pct", 0.0)
+            
+        team_rosters[team].append({
+            "id": pid,
+            "name": bio.get("name"),
+            "usg": usg
+        })
+
     # 2.6. Fetch injury reports, back-to-back info, and lineup confirmations
     injuries_cache = get_nba_injuries()
     b2b_cache = get_yesterdays_games()
@@ -1349,7 +1479,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     def enrich_player(player_data):
         player = player_data["player"]
         player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
-        nba_stats = get_player_stats_quick(player_name)
+        nba_stats = get_player_stats_quick(player_name, bio_cache=bio_cache)
 
         return {
             "underdog_player": player,
@@ -1412,14 +1542,27 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     team_abbr_for_lineup = ct
         ep_lineup_status = get_player_lineup_status(
             player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
+            
+        # Calculate Usage Vacuum Modifier
+        usage_vacuum = calculate_usage_vacuum_score(team_abbr_for_lineup, injuries_cache, team_rosters)
+        ep["usage_vacuum"] = usage_vacuum
 
-        # Calculate ranking score with lineup and trend context
+        # Determine if player is home tonight for ranking
+        is_home_tonight_rank = None
+        if team_abbr_for_lineup and lineup_abbr and " @ " in lineup_abbr:
+            _, home_l_check = lineup_abbr.split(" @ ")
+            is_home_tonight_rank = (team_abbr_for_lineup == home_l_check.strip())
+
+        # Calculate ranking score with full context
         ranking_score, score_components = calculate_ranking_score(
             {"averages": averages},
             ep["underdog_props"],
             game_time_utc,
             lineup_status=ep_lineup_status,
-            last5_games=last5_games
+            last5_games=last5_games,
+            usage_vacuum_modifier=usage_vacuum,
+            is_home=is_home_tonight_rank,
+            game_log=nba_stats.get("gameLog", [])
         )
         ep["ranking_score"] = ranking_score
         ep["score_components"] = score_components
@@ -1570,108 +1713,213 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             # Get opponent defense stats for matchup scoring
             opp_def_stats = team_defense_cache.get(opponent_abbr, {})
 
-            # Calculate ranking score with all context (v5)
-            prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier = calculate_prop_ranking_score(
-                prop, player_averages, game_time_utc,
-                lineup_status=lineup_status,
-                hit_rate=hit_rate,
-                trend_data=trend_data,
-                opp_def_rank=opp_def_stats.get("def_rank"),
-                opp_pace_rank=opp_def_stats.get("pace_rank"),
-                player_advanced=player_adv,
-                is_home=is_home_tonight,
-                game_log=game_log,
-            )
+                        # Calculate ranking score with all context (v5)
 
-            # Calculate matchup score for prop card (informational)
-            matchup_score = calculate_matchup_score(
-                opp_def_stats.get("def_rank"),
-                opp_def_stats.get("pace_rank"),
-                recommended_direction
-            )
+                        prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier = calculate_prop_ranking_score(
 
-            # Calculate efficiency score for prop card (informational)
-            eff_score = calculate_player_efficiency_score(stat_name, player_adv)
+                            prop, player_averages, game_time_utc,
 
-            # Minutes confidence (informational)
-            _, avg_minutes = calculate_minutes_confidence(game_log)
+                            lineup_status=lineup_status,
 
-            # Format stat name
-            short_name = stat_name.replace(
-                "Points", "Pts").replace("Rebounds", "Reb")
-            short_name = short_name.replace(
-                "Assists", "Ast").replace("3-Pointers Made", "3PM")
-            short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
+                            hit_rate=hit_rate,
 
-            try:
-                over_odds = int(
-                    str(prop.get("over_american", "-110")).replace("+", ""))
-            except:
-                over_odds = -110
-            try:
-                under_odds = int(
-                    str(prop.get("under_american", "-110")).replace("+", ""))
-            except:
-                under_odds = -110
+                            trend_data=trend_data,
 
-            prop_card = {
-                "player_id": str(player_id) if isinstance(player_id, int) else player_id,
-                "name": player_name,
-                "teamAbbr": team_abbr,
-                "position": position,
-                "imageName": image_url,
-                "opponent": opponent,
-                "gameTime": game_time,
-                "gameTimeUTC": game_time_utc,
-                "source": "underdog",
-                "last_updated": datetime.datetime.now().isoformat(),
-                # Single prop info
-                "statName": short_name,
-                "statNameFull": stat_name,
-                "line": prop.get("line", 0),
-                "overOdds": over_odds,
-                "underOdds": under_odds,
-                "propId": prop.get("id", str(uuid.uuid4())),
-                # Ranking data
-                "rankingScore": round(prop_score, 2),
-                "edge": edge,
-                "playerAverage": player_avg,
-                "urgencyScore": urgency_score,
-                "recommendedDirection": recommended_direction,
-                # Matchup data
-                "matchupScore": matchup_score,
-                "oppDefRank": opp_def_stats.get("def_rank"),
-                "oppPaceRank": opp_def_stats.get("pace_rank"),
-                # Efficiency data (player advanced stats)
-                "efficiencyScore": eff_score,
-                "playerAdvanced": {
-                    "usgPct": round(player_adv["usg_pct"] * 100, 1) if player_adv else None,
-                    "tsPct": round(player_adv["ts_pct"] * 100, 1) if player_adv else None,
-                    "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
-                    "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
-                } if player_adv else None,
-                # Hit rate data (up to 10 games, recency-weighted)
-                "hitRate": {
-                    "hits": hit_rate["hits"],
-                    "total": hit_rate["total"],
-                    "results": hit_rate["results"],
-                    "weightedPct": hit_rate.get("weightedPct", 0.0),
-                },
-                # Trend data
-                "trendData": {
-                    "trend": trend_data.get("trend", "stable"),
-                    "declinePct": trend_data.get("decline_pct", 0),
-                    "surgePct": trend_data.get("surge_pct", 0),
-                    "recentAvg": trend_data.get("recent_avg", 0),
-                    "fullAvg": trend_data.get("full_avg", 0),
-                },
-                # v5 modifiers
-                "isHome": is_home_tonight,
-                "homeAwayModifier": ha_modifier,
-                "minutesConfidence": min_modifier,
-                "avgMinutes": avg_minutes,
-                # Will be set after sorting
-                "section": "topPicks",
+                            opp_def_rank=opp_def_stats.get("def_rank"),
+
+                            opp_pace_rank=opp_def_stats.get("pace_rank"),
+
+                            player_advanced=player_adv,
+
+                            is_home=is_home_tonight,
+
+                            game_log=game_log,
+
+                            usage_vacuum_modifier=ep.get("usage_vacuum", 1.0)
+
+                        )
+
+            
+
+                        # Calculate matchup score for prop card (informational)
+
+                        matchup_score = calculate_matchup_score(
+
+                            opp_def_stats.get("def_rank"),
+
+                            opp_def_stats.get("pace_rank"),
+
+                            recommended_direction
+
+                        )
+
+            
+
+                        # Calculate efficiency score for prop card (informational)
+
+                        eff_score = calculate_player_efficiency_score(stat_name, player_adv)
+
+            
+
+                        # Minutes confidence (informational)
+
+                        _, avg_minutes = calculate_minutes_confidence(game_log)
+
+            
+
+                        # Format stat name
+
+                        short_name = stat_name.replace(
+
+                            "Points", "Pts").replace("Rebounds", "Reb")
+
+                        short_name = short_name.replace(
+
+                            "Assists", "Ast").replace("3-Pointers Made", "3PM")
+
+                        short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
+
+            
+
+                        try:
+
+                            over_odds = int(
+
+                                str(prop.get("over_american", "-110")).replace("+", ""))
+
+                        except:
+
+                            over_odds = -110
+
+                        try:
+
+                            under_odds = int(
+
+                                str(prop.get("under_american", "-110")).replace("+", ""))
+
+                        except:
+
+                            under_odds = -110
+
+            
+
+                        prop_card = {
+
+                            "player_id": str(player_id) if isinstance(player_id, int) else player_id,
+
+                            "name": player_name,
+
+                            "teamAbbr": team_abbr,
+
+                            "position": position,
+
+                            "imageName": image_url,
+
+                            "opponent": opponent,
+
+                            "gameTime": game_time,
+
+                            "gameTimeUTC": game_time_utc,
+
+                            "source": "underdog",
+
+                            "last_updated": datetime.datetime.now().isoformat(),
+
+                            # Single prop info
+
+                            "statName": short_name,
+
+                            "statNameFull": stat_name,
+
+                            "line": prop.get("line", 0),
+
+                            "overOdds": over_odds,
+
+                            "underOdds": under_odds,
+
+                            "propId": prop.get("id", str(uuid.uuid4())),
+
+                            # Ranking data
+
+                            "rankingScore": round(prop_score, 2),
+
+                            "edge": edge,
+
+                            "playerAverage": player_avg,
+
+                            "urgencyScore": urgency_score,
+
+                            "recommendedDirection": recommended_direction,
+
+                            # Matchup data
+
+                            "matchupScore": matchup_score,
+
+                            "oppDefRank": opp_def_stats.get("def_rank"),
+
+                            "oppPaceRank": opp_def_stats.get("pace_rank"),
+
+                            # Efficiency data (player advanced stats)
+
+                            "efficiencyScore": eff_score,
+
+                            "playerAdvanced": {
+
+                                "usgPct": round(player_adv["usg_pct"] * 100, 1) if player_adv else None,
+
+                                "tsPct": round(player_adv["ts_pct"] * 100, 1) if player_adv else None,
+
+                                "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
+
+                                "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
+
+                            } if player_adv else None,
+
+                            # Hit rate data (up to 10 games, recency-weighted)
+
+                            "hitRate": {
+
+                                "hits": hit_rate["hits"],
+
+                                "total": hit_rate["total"],
+
+                                "results": hit_rate["results"],
+
+                                "weightedPct": hit_rate.get("weightedPct", 0.0),
+
+                            },
+
+                            # Trend data
+
+                            "trendData": {
+
+                                "trend": trend_data.get("trend", "stable"),
+
+                                "declinePct": trend_data.get("decline_pct", 0),
+
+                                "surgePct": trend_data.get("surge_pct", 0),
+
+                                "recentAvg": trend_data.get("recent_avg", 0),
+
+                                "fullAvg": trend_data.get("full_avg", 0),
+
+                            },
+
+                            # v5 modifiers
+
+                            "isHome": is_home_tonight,
+
+                            "homeAwayModifier": ha_modifier,
+
+                            "minutesConfidence": min_modifier,
+
+                            "avgMinutes": avg_minutes,
+
+                            "usageVacuum": ep.get("usage_vacuum", 1.0),
+
+                            # Will be set after sorting
+
+                            "section": "topPicks",
                 "featured": False,
                 "trending": "up",
                 # Player averages for context
@@ -1828,6 +2076,28 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     print("📊 Fetching player advanced stats...")
     player_advanced_cache = get_all_player_advanced_stats()
     print(f"✓ Cached advanced stats for {len(player_advanced_cache)} players")
+    
+    # Fetch player bio stats (Position, Team) for roster mapping
+    print("📊 Fetching player bio stats...")
+    bio_cache = get_all_player_bio_stats()
+    print(f"✓ Cached bio stats for {len(bio_cache)} players")
+    
+    # Build team rosters for Usage Vacuum calculation
+    team_rosters = {}
+    for pid, bio in bio_cache.items():
+        team = bio.get("team_abbr")
+        if not team: continue
+        if team not in team_rosters: team_rosters[team] = []
+        
+        usg = 0.0
+        if pid in player_advanced_cache:
+            usg = player_advanced_cache[pid].get("usg_pct", 0.0)
+            
+        team_rosters[team].append({
+            "id": pid,
+            "name": bio.get("name"),
+            "usg": usg
+        })
 
     # Fetch injury reports, back-to-back info, and lineup confirmations
     injuries_cache = get_nba_injuries()
@@ -1893,7 +2163,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     def enrich_player(player_data):
         player = player_data["player"]
         player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
-        nba_stats = get_player_stats_quick(player_name)
+        nba_stats = get_player_stats_quick(player_name, bio_cache=bio_cache)
         return {
             "underdog_player": player,
             "underdog_props": player_data["props"],
@@ -1952,10 +2222,25 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                     team_abbr_for_lineup = ct
         ep_lineup_status = get_player_lineup_status(
             player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
+            
+        # Determine if player is home tonight for ranking
+        is_home_tonight_rank = None
+        lineup_abbr = ud_game.get("abbreviated_title", "")
+        if team_abbr_for_lineup and lineup_abbr and " @ " in lineup_abbr:
+            _, home_l_check = lineup_abbr.split(" @ ")
+            is_home_tonight_rank = (team_abbr_for_lineup == home_l_check.strip())
+
+        # Calculate Usage Vacuum Modifier
+        usage_vacuum = calculate_usage_vacuum_score(team_abbr_for_lineup, injuries_cache, team_rosters)
+        ep["usage_vacuum"] = usage_vacuum
 
         ranking_score, score_components = calculate_ranking_score(
             {"averages": averages}, ep["underdog_props"], game_time_utc,
-            lineup_status=ep_lineup_status, last5_games=last5_games)
+            lineup_status=ep_lineup_status, last5_games=last5_games,
+            usage_vacuum_modifier=usage_vacuum,
+            is_home=is_home_tonight_rank,
+            game_log=nba_stats.get("gameLog", [])
+        )
         ep["ranking_score"] = ranking_score
         ep["player_averages"] = averages
 
@@ -2072,6 +2357,9 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             player_adv = player_advanced_cache.get(player_id)
         elif isinstance(player_id, str) and player_id.isdigit():
             player_adv = player_advanced_cache.get(int(player_id))
+            
+        # Get opp defense stats
+        opp_def_stats = team_defense_cache.get(opponent_abbr, {})
 
         for prop in ud_props:
             stat_name = prop.get("stat_name", "")
@@ -2082,9 +2370,6 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             line = float(prop.get("line", 0))
             hit_rate = calculate_hit_rate(game_log if game_log else last5_games, stat_name, line)
             trend_data = calculate_trend_score(last5_games, stat_name)
-
-            # Get opponent defense stats for matchup scoring
-            opp_def_stats = team_defense_cache.get(opponent_abbr, {})
 
             # Calculate ranking score with all context (v5)
             prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier = calculate_prop_ranking_score(
@@ -2097,9 +2382,10 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 player_advanced=player_adv,
                 is_home=is_home_tonight,
                 game_log=game_log,
+                usage_vacuum_modifier=ep.get("usage_vacuum", 1.0)
             )
 
-            # Calculate matchup score for prop card (informational)
+            # Matchup score (informational)
             matchup_score = calculate_matchup_score(
                 opp_def_stats.get("def_rank"),
                 opp_def_stats.get("pace_rank"),
@@ -2182,6 +2468,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "homeAwayModifier": ha_modifier,
                 "minutesConfidence": min_modifier,
                 "avgMinutes": avg_minutes,
+                "usageVacuum": ep.get("usage_vacuum", 1.0),
                 "section": "topPicks",
                 "featured": False,
                 "trending": "up",

@@ -314,6 +314,7 @@ struct PlayerCardData: Identifiable, Codable {
     var homeAwayModifier: Double?
     var minutesConfidence: Double?
     var avgMinutes: Double?
+    var usageVacuum: Double?
 
     // Computed property: get the main prop (either from single prop fields or first of array)
     var mainProp: PlayerProp? {
@@ -348,7 +349,7 @@ struct PlayerCardData: Identifiable, Codable {
          matchupScore: Double? = nil, oppDefRank: Int? = nil, oppPaceRank: Int? = nil,
          efficiencyScore: Double? = nil, playerAdvanced: PlayerAdvanced? = nil,
          restStatus: String? = nil, teamInjuries: String? = nil, oppInjuries: String? = nil, opponentAbbr: String? = nil,
-         isHome: Bool? = nil, homeAwayModifier: Double? = nil, minutesConfidence: Double? = nil, avgMinutes: Double? = nil) {
+         isHome: Bool? = nil, homeAwayModifier: Double? = nil, minutesConfidence: Double? = nil, avgMinutes: Double? = nil, usageVacuum: Double? = nil) {
         // Accept Int or String for id
         if let intId = id as? Int {
             self.id = String(intId)
@@ -401,6 +402,7 @@ struct PlayerCardData: Identifiable, Codable {
         self.homeAwayModifier = homeAwayModifier
         self.minutesConfidence = minutesConfidence
         self.avgMinutes = avgMinutes
+        self.usageVacuum = usageVacuum
     }
 
     // Custom decoder to handle id being either Int or String in Firebase
@@ -527,5 +529,9 @@ struct PlayerCardData: Identifiable, Codable {
         if let d = try? container.decodeIfPresent(Double.self, forKey: .avgMinutes) { self.avgMinutes = d }
         else if let i = try? container.decodeIfPresent(Int.self, forKey: .avgMinutes) { self.avgMinutes = Double(i) }
         else { self.avgMinutes = nil }
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .usageVacuum) { self.usageVacuum = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .usageVacuum) { self.usageVacuum = Double(i) }
+        else { self.usageVacuum = nil }
     }
 }
