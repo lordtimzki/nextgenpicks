@@ -102,6 +102,7 @@ struct PlayerAverages: Codable {
     let pts: Double
     let reb: Double
     let ast: Double
+    let fg3m: Double
 
     // Custom decoder to handle Int or Double from Firestore
     init(from decoder: Decoder) throws {
@@ -133,13 +134,23 @@ struct PlayerAverages: Codable {
         } else {
             self.ast = 0
         }
+
+        // Handle fg3m as Double or Int
+        if let doubleFg3m = try? container.decode(Double.self, forKey: .fg3m) {
+            self.fg3m = doubleFg3m
+        } else if let intFg3m = try? container.decode(Int.self, forKey: .fg3m) {
+            self.fg3m = Double(intFg3m)
+        } else {
+            self.fg3m = 0
+        }
     }
 
     // Regular initializer for programmatic creation
-    init(pts: Double, reb: Double, ast: Double) {
+    init(pts: Double, reb: Double, ast: Double, fg3m: Double = 0) {
         self.pts = pts
         self.reb = reb
         self.ast = ast
+        self.fg3m = fg3m
     }
 }
 

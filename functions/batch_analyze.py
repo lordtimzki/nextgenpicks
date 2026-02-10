@@ -7,14 +7,13 @@ Uses ESPN for game schedules
 from firebase_functions import https_fn, scheduler_fn
 from firebase_admin import firestore
 import httpx
-import os
 import json
 import datetime
 import uuid
 from datetime import timezone
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats, get_all_player_bio_stats
+from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats, get_all_player_bio_stats, get_all_team_opponent_stats
 
 # Note: Firebase is initialized in main.py which imports this module
 
@@ -48,7 +47,7 @@ def get_nba_injuries() -> dict:
     # ESPN abbreviation mapping (ESPN uses some different abbrevs)
     espn_to_standard = {
         "GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
-        "UTAH": "UTA", "PHX": "PHO", "WSH": "WAS"
+        "UTAH": "UTA", "WSH": "WAS"
     }
 
     injuries_by_team = {}
@@ -114,7 +113,7 @@ def get_yesterdays_games() -> dict:
 
     espn_to_standard = {
         "GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
-        "UTAH": "UTA", "PHX": "PHO", "WSH": "WAS"
+        "UTAH": "UTA", "WSH": "WAS"
     }
 
     teams_played_yesterday = {}
@@ -179,7 +178,7 @@ def get_todays_lineups() -> dict:
 
     espn_to_standard = {
         "GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
-        "UTAH": "UTA", "PHX": "PHO", "WSH": "WAS"
+        "UTAH": "UTA", "WSH": "WAS"
     }
 
     lineup_info = {}  # player_name -> {status, team, is_starter}
@@ -390,40 +389,6 @@ def calculate_urgency_score(game_time_utc: str) -> float:
         return 2.0
 
 
-def calculate_odds_value_score(props: list) -> float:
-    """
-    Calculate odds value score based on skewed odds.
-    If over odds > -105 (plus money or close): higher score
-    Standard -110/-110: neutral score
-    """
-    if not props:
-        return 5.0
-
-    best_odds_score = 5.0
-
-    for prop in props:
-        try:
-            over_odds = int(
-                str(prop.get("over_american", "-110")).replace("+", ""))
-        except (ValueError, TypeError):
-            over_odds = -110
-
-        # Plus money or better odds indicate value
-        if over_odds >= 100:
-            odds_score = 10.0
-        elif over_odds >= -105:
-            odds_score = 8.0
-        elif over_odds >= -110:
-            odds_score = 5.0
-        elif over_odds >= -120:
-            odds_score = 3.0
-        else:
-            odds_score = 2.0
-
-        best_odds_score = max(best_odds_score, odds_score)
-
-    return best_odds_score
-
 
 def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   lineup_status: str = "", hit_rate: dict = None,
@@ -433,7 +398,8 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   player_advanced: dict = None,
                                   is_home: bool = None,
                                   game_log: list = None,
-                                  usage_vacuum_modifier: float = 1.0) -> tuple:
+                                  usage_vacuum_modifier: float = 1.0,
+                                  opp_stat_rank: int = None) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score,
@@ -494,20 +460,23 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     relevant_odds = under_odds_val if recommended_direction == "Under" else over_odds_val
     odds_score = _odds_tier_score(relevant_odds)
 
-    # 6. Matchup Score
-    matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction)
-    
-    # Boost matchup weight if extreme outlier
+    # 6. Matchup Score (stat-specific when available)
+    matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction, opp_stat_rank=opp_stat_rank)
+
+    # Boost matchup weight if extreme outlier (redistribute from edge to keep sum = 1.0)
+    # Use stat-specific rank for boost check when available
+    effective_def_rank = opp_stat_rank if opp_stat_rank is not None else opp_def_rank
     matchup_weight = 0.20
-    if (opp_def_rank and opp_def_rank >= 28 and recommended_direction == "Over") or \
-       (opp_def_rank and opp_def_rank <= 3 and recommended_direction == "Under"):
+    edge_weight = 0.35
+    if (effective_def_rank and effective_def_rank >= 28 and recommended_direction == "Over") or \
+       (effective_def_rank and effective_def_rank <= 3 and recommended_direction == "Under"):
         matchup_weight = 0.25
+        edge_weight = 0.30
 
     # Calculate base total score (v6 weights)
-    # Adjust weights slightly to accommodate dynamic matchup weight
-    # Base: Edge 35%, HitRate 20%, Matchup 20-25%, Odds 15%, Eff 10%
-    # Sum might exceed 1.0 slightly, we normalize at end implicitly by clamping
-    total = (edge_score * 0.35) + (matchup_score * matchup_weight) + (hit_rate_score * 0.20) + (efficiency_score * 0.10) + (odds_score * 0.15)
+    # Base: Edge 35%, HitRate 20%, Matchup 20%, Odds 15%, Eff 10%
+    # Extreme matchup: Edge 30%, Matchup 25% (sum stays 1.0)
+    total = (edge_score * edge_weight) + (matchup_score * matchup_weight) + (hit_rate_score * 0.20) + (efficiency_score * 0.10) + (odds_score * 0.15)
 
     # Apply lineup modifiers - DIRECTION AWARE
     if lineup_status == "GTD":
@@ -564,6 +533,19 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
             # Penalty for Under if usage opens up
             total *= (1.0 / usage_vacuum_modifier)
 
+    # Apply Consistency Modifier (CV-based)
+    consistency_mod, _ = calculate_consistency_modifier(game_log or [], stat, recommended_direction)
+    total *= consistency_mod
+
+    # Apply Rest Modifier (days since last game)
+    rest_days_val = calculate_rest_days(game_log or [], game_time_utc)
+    rest_mod = calculate_rest_modifier(rest_days_val, recommended_direction)
+    total *= rest_mod
+
+    # Apply Sample Size Confidence (LAST — scales the fully-adjusted score)
+    sample_conf = calculate_sample_size_confidence(game_log or [])
+    total *= sample_conf
+
     # Final clamp
     total = max(0.0, min(10.0, total))
 
@@ -571,20 +553,21 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
 
 
 def calculate_matchup_score(opp_def_rank: int = None, opp_pace_rank: int = None,
-                            direction: str = None) -> float:
+                            direction: str = None, opp_stat_rank: int = None) -> float:
     """
     Calculate direction-aware matchup score (0-10) using opponent defense + pace.
 
     For Over: weak defense (high rank) + fast pace (low rank) = favorable (high score)
     For Under: strong defense (low rank) + slow pace (high rank) = favorable (high score)
     Defense weighted 60%, pace 40%.
+    When opp_stat_rank is provided, it replaces opp_def_rank for stat-specific accuracy.
     Returns 5.0 (neutral) if direction unknown or data missing.
     """
-    if direction is None or (opp_def_rank is None and opp_pace_rank is None):
+    if direction is None or (opp_def_rank is None and opp_pace_rank is None and opp_stat_rank is None):
         return 5.0
 
-    # Default to mid-rank if one is missing
-    def_rank = opp_def_rank if opp_def_rank is not None else 15
+    # Use stat-specific rank when available, fall back to generic defense rank
+    def_rank = opp_stat_rank if opp_stat_rank is not None else (opp_def_rank if opp_def_rank is not None else 15)
     pace_rank = opp_pace_rank if opp_pace_rank is not None else 15
 
     if direction == "Over":
@@ -701,9 +684,12 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
                             lineup_status: str = "", last5_games: list = None,
                             usage_vacuum_modifier: float = 1.0,
                             is_home: bool = None,
-                            game_log: list = None) -> tuple:
+                            game_log: list = None,
+                            opp_def_rank: int = None,
+                            opp_pace_rank: int = None,
+                            player_advanced: dict = None) -> tuple:
     """
-    Calculate ranking score for a player (legacy - finds best prop score).
+    Calculate ranking score for a player (finds best prop score).
     Returns (total_score, component_scores)
     """
     averages = player_data.get("averages", {"pts": 0, "reb": 0, "ast": 0})
@@ -711,13 +697,16 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
     best_score = 0
     best_components = {"edge": 0, "efficiency": 0, "odds": 0}
 
+    # Use full game log for hit rate (up to 10 games with recency weighting)
+    games_for_hit_rate = game_log or last5_games or []
+
     for prop in props:
         stat_name = prop.get("stat_name", "")
         line = float(prop.get("line", 0))
 
         # Calculate hit rate and trend for this prop
-        hit_rate = calculate_hit_rate(last5_games or [], stat_name, line)
-        trend_data = calculate_trend_score(last5_games or [], stat_name)
+        hit_rate = calculate_hit_rate(games_for_hit_rate, stat_name, line)
+        trend_data = calculate_trend_score(games_for_hit_rate, stat_name)
 
         score, edge, player_avg, urgency, recommended_direction, _, _ = calculate_prop_ranking_score(
             prop, averages, game_time_utc,
@@ -726,16 +715,19 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
             trend_data=trend_data,
             usage_vacuum_modifier=usage_vacuum_modifier,
             is_home=is_home,
-            game_log=game_log
+            game_log=game_log,
+            opp_def_rank=opp_def_rank,
+            opp_pace_rank=opp_pace_rank,
+            player_advanced=player_advanced
         )
         if score > best_score:
             best_score = score
             # Normalize edge for display component (0-10 scale approximation)
             display_edge = min(10.0, (abs(edge) / (line if line > 0 else 1)) * 40.0)
-            
+
             best_components = {
                 "edge": round(display_edge, 2),
-                "efficiency": round(calculate_player_efficiency_score(stat_name), 2),
+                "efficiency": round(calculate_player_efficiency_score(stat_name, player_advanced), 2),
                 "odds": 5.0
             }
 
@@ -1088,7 +1080,7 @@ def get_player_stats_quick(player_name: str, bio_cache: dict = None) -> dict | N
                 if info:
                     position = str(info[0].get('POSITION', 'N/A'))
                     current_team = str(info[0].get('TEAM_ABBREVIATION', ''))
-            except:
+            except Exception:
                 pass
 
         try:
@@ -1215,6 +1207,136 @@ def _game_stat_value(game: dict, stat_key: str) -> float:
     return game.get(stat_key, 0)
 
 
+def _resolve_opponent_stat_rank(stat_name: str, opp_stats: dict) -> int | None:
+    """
+    Map a stat name to the stat-specific opponent rank.
+    Returns the rank (1=best D, 30=worst) or None if unmapped.
+    """
+    if not opp_stats:
+        return None
+
+    stat_lower = stat_name.lower()
+
+    # Combined stats first
+    if "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        pts_r = opp_stats.get("opp_pts_rank", 15)
+        reb_r = opp_stats.get("opp_reb_rank", 15)
+        ast_r = opp_stats.get("opp_ast_rank", 15)
+        return int(pts_r * 0.5 + reb_r * 0.25 + ast_r * 0.25)
+    elif "3-pointer" in stat_lower or "3pm" in stat_lower:
+        return opp_stats.get("opp_fg3m_rank")
+    elif "point" in stat_lower or "pts" in stat_lower:
+        return opp_stats.get("opp_pts_rank")
+    elif "rebound" in stat_lower or "reb" in stat_lower:
+        return opp_stats.get("opp_reb_rank")
+    elif "assist" in stat_lower or "ast" in stat_lower:
+        return opp_stats.get("opp_ast_rank")
+
+    return None
+
+
+def calculate_consistency_modifier(game_log: list, stat_name: str, recommended_direction: str) -> tuple:
+    """
+    Calculate consistency modifier based on coefficient of variation.
+    Consistent players get a boost for Over, volatile players get a boost for Under.
+    Returns (modifier, cv_value). Requires >= 4 games, else (1.0, 0.0).
+    """
+    if not game_log or len(game_log) < 4:
+        return 1.0, 0.0
+
+    stat_key = _resolve_stat_key(stat_name)
+    if not stat_key:
+        return 1.0, 0.0
+
+    values = [_game_stat_value(game, stat_key) for game in game_log]
+    mean = sum(values) / len(values)
+    if mean == 0:
+        return 1.0, 0.0
+
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    std_dev = variance ** 0.5
+    cv = std_dev / mean
+
+    if cv < 0.20:
+        # Consistent player
+        modifier = 1.06 if recommended_direction == "Over" else 0.94
+    elif cv > 0.35:
+        # Volatile player
+        modifier = 0.94 if recommended_direction == "Over" else 1.06
+    else:
+        modifier = 1.0
+
+    return modifier, round(cv, 3)
+
+
+def calculate_sample_size_confidence(game_log: list) -> float:
+    """
+    Calculate confidence multiplier based on number of games available.
+    5+ games: 1.0 (full confidence), fewer games are penalized proportionally.
+    Returns multiplier in [0.0, 1.0].
+    """
+    if not game_log:
+        return 0.0
+    num_games = len(game_log)
+    return min(1.0, num_games / 5.0)
+
+
+def calculate_rest_days(game_log: list, game_time_utc: str) -> int:
+    """
+    Calculate days since last game from game log.
+    Parses game_log[0].date (e.g. "Apr 11, 2025" or "2025-04-11T...") and tonight's date.
+    Returns days diff (0=B2B, 1=normal). -1 on failure.
+    """
+    if not game_log or not game_time_utc:
+        return -1
+
+    last_game_date_str = game_log[0].get("date", "")
+    if not last_game_date_str:
+        return -1
+
+    try:
+        # Try ISO format first (2025-04-11 or 2025-04-11T...)
+        try:
+            last_date = datetime.datetime.strptime(last_game_date_str[:10], "%Y-%m-%d").date()
+        except ValueError:
+            # Try "Apr 11, 2025" format
+            last_date = datetime.datetime.strptime(last_game_date_str, "%b %d, %Y").date()
+
+        # Parse tonight's game time
+        game_dt = datetime.datetime.fromisoformat(game_time_utc.replace('Z', '+00:00'))
+        tonight_date = game_dt.date()
+
+        diff = (tonight_date - last_date).days
+        # Subtract 1 because "1 day between games" means B2B (played yesterday)
+        rest = max(0, diff - 1)
+        return rest
+    except Exception:
+        return -1
+
+
+def calculate_rest_modifier(rest_days: int, recommended_direction: str) -> float:
+    """
+    Calculate modifier based on days of rest.
+    B2B (0): penalizes Over, boosts Under.
+    Extra rest (2+): boosts Over, penalizes Under.
+    Returns multiplier.
+    """
+    if rest_days < 0:
+        return 1.0
+
+    if rest_days == 0:
+        # B2B
+        return 0.95 if recommended_direction == "Over" else 1.03
+    elif rest_days == 1:
+        # Normal rest
+        return 1.0
+    elif rest_days == 2:
+        return 1.03 if recommended_direction == "Over" else 0.97
+    else:
+        # 3+ days rest
+        return 1.05 if recommended_direction == "Over" else 0.95
+
+
 def calculate_hit_rate(last5_games: list, stat_name: str, line: float) -> dict:
     """
     Calculate hit rate for a specific stat against a line.
@@ -1295,123 +1417,93 @@ def calculate_trend_score(last5_games: list, stat_name: str) -> dict:
         return {"trend": "stable", "decline_pct": 0, "surge_pct": 0, "recent_avg": round(recent_avg, 1), "full_avg": round(full_avg, 1)}
 
 
-def format_props_for_ios(props: list) -> list:
-    """Format Underdog props for iOS app structure."""
-    ios_props = []
-    seen_stats = set()
 
-    # Prioritize main stats
-    priority_stats = ["Points", "Rebounds", "Assists",
-                      "3-Pointers Made", "Pts + Rebs + Asts"]
-
-    def prop_priority(p):
-        stat = p["stat_name"]
-        if stat in priority_stats:
-            return priority_stats.index(stat)
-        return 100
-
-    sorted_props = sorted(props, key=prop_priority)
-
-    for prop in sorted_props:
-        stat_name = prop["stat_name"]
-
-        if stat_name in seen_stats or len(ios_props) >= 6:
-            continue
-        seen_stats.add(stat_name)
-
-        short_name = stat_name
-        short_name = short_name.replace("Points", "Pts")
-        short_name = short_name.replace("Rebounds", "Reb")
-        short_name = short_name.replace("Assists", "Ast")
-        short_name = short_name.replace("3-Pointers Made", "3PM")
-        short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
-        short_name = short_name.replace("Fantasy Points", "FPTS")
-
-        try:
-            over_odds = int(prop["over_american"].replace("+", ""))
-        except:
-            over_odds = -110
-        try:
-            under_odds = int(prop["under_american"].replace("+", ""))
-        except:
-            under_odds = -110
-
-        ios_props.append({
-            "id": prop["id"],
-            "statName": short_name,
-            "line": prop["line"],
-            "overOdds": over_odds,
-            "underOdds": under_odds,
-        })
-
-    return ios_props
-
-
-@https_fn.on_request(timeout_sec=540, memory=2048)
-def batch_analyze(req: https_fn.Request) -> https_fn.Response:
+def _determine_trending_status(prop_score: float, trend_data: dict, hit_rate: dict) -> str:
     """
-    Fetch NBA player props from Underdog Fantasy and rank with data-driven scoring.
-    Uses ESPN for schedule data and nba_api for player stats enrichment.
+    Determine trending badge status for a prop card.
 
-    WORKFLOW:
-    1. Scrape all props from Underdog Fantasy
-    2. Enrich with NBA API stats
-    3. Calculate ranking scores for all props
-    4. Build prop cards and WRITE TO FIRESTORE FIRST (ensures data is saved)
-    5. Write prop cards to Firestore
-    6. Update those 10 docs with AI analysis
+    HOT: prop_score >= 7.5 AND trend == "surging" AND weightedPct >= 0.60
+    FADE: trend == "declining" with decline_pct >= 25 AND weightedPct < 0.35
+    UP: everything else (default)
     """
+    trend = trend_data.get("trend", "stable")
+    weighted_pct = hit_rate.get("weightedPct", 0.0)
+    decline_pct = trend_data.get("decline_pct", 0)
 
+    if prop_score >= 7.5 and trend == "surging" and weighted_pct >= 0.60:
+        return "hot"
+    elif trend == "declining" and decline_pct >= 25 and weighted_pct < 0.35:
+        return "fade"
+    return "up"
+
+
+def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
+    """
+    Core analysis pipeline shared by HTTP and scheduled triggers.
+
+    Args:
+        source: "batch_analyze" or "scheduled_refresh" (for metadata)
+        max_enrich: Max players to enrich (0 = no limit)
+
+    Returns:
+        dict with props_written, top_picks, for_you, espn_games_today
+        or None if no props found.
+    """
     print("\n" + "="*60)
-    print("=== UNDERDOG + ESPN BATCH ANALYSIS ===")
+    print(f"=== {source.upper()} ===")
+    print(f"=== Time: {datetime.datetime.now().isoformat()} ===")
     print("="*60 + "\n")
 
     # 1. Fetch props from Underdog Fantasy (no API key needed!)
     underdog_data = get_underdog_nba_props()
 
     if not underdog_data["players"]:
-        return https_fn.Response(json.dumps({
-            "status": "error",
-            "message": "No NBA player props found from Underdog Fantasy",
-            "note": "This may happen if no NBA games are scheduled today"
-        }), status=404, mimetype='application/json')
+        print("No NBA props available")
+        return None
 
     # 2. Fetch ESPN schedule for additional game context
     espn_games = get_espn_nba_schedule()
 
-    # 2.5. Fetch team defense stats for matchup analysis (single API call for all 30 teams)
+    # 3. Fetch team defense stats for matchup analysis (single API call for all 30 teams)
     print("\n📊 Fetching team defense stats for matchup analysis...")
     team_defense_cache = get_all_team_defense_stats()
     print(f"✓ Cached defense stats for {len(team_defense_cache)} teams")
 
-    # 2.55. Fetch player advanced stats (single API call for all ~500 players)
+    # 3b. Fetch stat-specific opponent stats (e.g. OPP_PTS_RANK, OPP_FG3M_RANK)
+    print("📊 Fetching stat-specific opponent stats...")
+    opponent_stats_cache = get_all_team_opponent_stats()
+    print(f"✓ Cached opponent stats for {len(opponent_stats_cache)} teams")
+
+    # 4. Fetch player advanced stats (single API call for all ~500 players)
     print("📊 Fetching player advanced stats...")
     player_advanced_cache = get_all_player_advanced_stats()
     print(f"✓ Cached advanced stats for {len(player_advanced_cache)} players")
 
-    # 2.56. Fetch player bio stats (Position, Team) for roster mapping
+    # 5. Fetch player bio stats (Position, Team) for roster mapping
     print("📊 Fetching player bio stats...")
     bio_cache = get_all_player_bio_stats()
     print(f"✓ Cached bio stats for {len(bio_cache)} players")
-    
+
     # Build team rosters for Usage Vacuum calculation
     team_rosters = {}
     for pid, bio in bio_cache.items():
         team = bio.get("team_abbr")
-        if not team: continue
-        if team not in team_rosters: team_rosters[team] = []
-        
+        if not team:
+            continue
+        if team not in team_rosters:
+            team_rosters[team] = []
+
         usg = 0.0
         if pid in player_advanced_cache:
             usg = player_advanced_cache[pid].get("usg_pct", 0.0)
-            
+
         team_rosters[team].append({
             "id": pid,
             "name": bio.get("name"),
             "usg": usg
         })
 
-    # 2.6. Fetch injury reports, back-to-back info, and lineup confirmations
+    # 6. Fetch injury reports, back-to-back info, and lineup confirmations
     injuries_cache = get_nba_injuries()
     b2b_cache = get_yesterdays_games()
     lineup_cache = get_todays_lineups()
@@ -1419,9 +1511,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     print(
         f"\nProcessing {len(underdog_data['players'])} players with props...\n")
 
-    # 3. Enrich with NBA stats (parallel) - SMART SELECTION BY ODDS VALUE
-    # Instead of just taking players with most props, prioritize players whose props have good odds
-    # This ensures a role player with a +100 line gets enriched over a star with standard -110
+    # 7. Enrich with NBA stats (parallel) - SMART SELECTION BY ODDS VALUE
     players_to_process = underdog_data["players"]
 
     # Score all props by odds value and find unique players with best opportunities
@@ -1435,9 +1525,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             except (ValueError, TypeError):
                 over_odds = -110
 
-            # Score: plus money = 100+, near-even = 90-99, standard = 50, bad = 0-49
             if over_odds >= 100:
-                odds_score = 100 + over_odds  # +150 = 250 score
+                odds_score = 100 + over_odds
             elif over_odds >= -105:
                 odds_score = 95
             elif over_odds >= -110:
@@ -1465,11 +1554,12 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             seen_player_ids.add(item["player_id"])
             players_by_odds_value.append(item["player_data"])
 
-    # Enrich top players by odds value (cap to avoid NBA API rate-limit timeouts)
-    MAX_ENRICH = 60
-    players_to_enrich = players_by_odds_value[:MAX_ENRICH]
-    if len(players_by_odds_value) > MAX_ENRICH:
-        print(f"  ⚠️ Capping enrichment from {len(players_by_odds_value)} to {MAX_ENRICH} players")
+    # Apply enrichment cap if specified
+    if max_enrich > 0 and len(players_by_odds_value) > max_enrich:
+        print(f"  ⚠️ Capping enrichment from {len(players_by_odds_value)} to {max_enrich} players")
+        players_to_enrich = players_by_odds_value[:max_enrich]
+    else:
+        players_to_enrich = players_by_odds_value
 
     print(
         f"  Will enrich {len(players_to_enrich)} players with NBA API")
@@ -1508,7 +1598,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     print(
         f"\n📊 Processed {len(enriched_players)} total players\n")
 
-    # 4. Calculate ranking scores for all players
+    # 8. Calculate ranking scores for all players
     print("📊 Calculating ranking scores...")
     for ep in enriched_players:
         nba_stats = ep.get("nba_stats") or {}
@@ -1522,7 +1612,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                 game_dt = datetime.datetime.fromisoformat(
                     ud_game["scheduled_at"].replace('Z', '+00:00'))
                 game_time_utc = game_dt.isoformat()
-            except:
+            except Exception:
                 pass
 
         # Get lineup status for player-level ranking
@@ -1531,8 +1621,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
         if nba_stats and nba_stats.get("team_code"):
             team_abbr_for_lineup = nba_stats["team_code"]
         # Validate team against game (handles traded players)
-        ud_game_for_lineup = ep.get("underdog_game", {})
-        lineup_abbr = ud_game_for_lineup.get("abbreviated_title", "")
+        lineup_abbr = ud_game.get("abbreviated_title", "")
         if team_abbr_for_lineup and lineup_abbr and " @ " in lineup_abbr:
             away_l, home_l = lineup_abbr.split(" @ ")
             away_l, home_l = away_l.strip(), home_l.strip()
@@ -1542,7 +1631,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     team_abbr_for_lineup = ct
         ep_lineup_status = get_player_lineup_status(
             player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
-            
+
         # Calculate Usage Vacuum Modifier
         usage_vacuum = calculate_usage_vacuum_score(team_abbr_for_lineup, injuries_cache, team_rosters)
         ep["usage_vacuum"] = usage_vacuum
@@ -1553,6 +1642,16 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             _, home_l_check = lineup_abbr.split(" @ ")
             is_home_tonight_rank = (team_abbr_for_lineup == home_l_check.strip())
 
+        # Look up opponent defense stats and player advanced stats for ranking
+        rank_opponent_abbr = get_opponent_abbrev(lineup_abbr, team_abbr_for_lineup) if lineup_abbr and team_abbr_for_lineup else ""
+        rank_opp_def_stats = team_defense_cache.get(rank_opponent_abbr, {})
+        rank_player_adv = None
+        rank_player_id = nba_stats.get("id") if nba_stats else None
+        if isinstance(rank_player_id, int):
+            rank_player_adv = player_advanced_cache.get(rank_player_id)
+        elif isinstance(rank_player_id, str) and rank_player_id.isdigit():
+            rank_player_adv = player_advanced_cache.get(int(rank_player_id))
+
         # Calculate ranking score with full context
         ranking_score, score_components = calculate_ranking_score(
             {"averages": averages},
@@ -1562,7 +1661,10 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             last5_games=last5_games,
             usage_vacuum_modifier=usage_vacuum,
             is_home=is_home_tonight_rank,
-            game_log=nba_stats.get("gameLog", [])
+            game_log=nba_stats.get("gameLog", []),
+            opp_def_rank=rank_opp_def_stats.get("def_rank"),
+            opp_pace_rank=rank_opp_def_stats.get("pace_rank"),
+            player_advanced=rank_player_adv
         )
         ep["ranking_score"] = ranking_score
         ep["score_components"] = score_components
@@ -1577,13 +1679,14 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
 
     print(f"✓ Marked top {featured_count} players as featured")
 
-    # 5. Build individual prop cards (one document per prop)
-    # Build individual prop cards for each stat
+    # 9. Build individual prop cards (one document per prop)
     print("📊 Building individual prop cards...")
     all_prop_cards = []
 
     # Cache per-team context so teammates reuse the same lookups
-    team_context_cache = {}  # team_abbr -> {opponent_abbr, team_injuries, opp_injuries, rest_status, opp_def_stats}
+    team_context_cache = {}
+    priority_stats = ["Points", "Rebounds", "Assists",
+                      "3-Pointers Made", "Pts + Rebs + Asts"]
 
     for ep in enriched_players:
         ud_player = ep["underdog_player"]
@@ -1624,7 +1727,6 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             away_t, home_t = abbr_title.split(" @ ")
             away_t, home_t = away_t.strip(), home_t.strip()
             if team_abbr not in (away_t, home_t):
-                # Player's team doesn't match the game - likely traded mid-season
                 ct = nba_stats.get("current_team", "") if nba_stats else ""
                 if ct and ct in (away_t, home_t):
                     print(f"  ⚠️ Trade fix: {player_name} {team_abbr}->{ct} (game: {abbr_title})")
@@ -1647,12 +1749,8 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
                     scheduled.replace('Z', '+00:00'))
                 game_time = game_dt.strftime("%I:%M %p UTC")
                 game_time_utc = game_dt.isoformat()
-            except:
+            except Exception:
                 pass
-
-        # Create individual prop cards for priority stats only
-        priority_stats = ["Points", "Rebounds", "Assists",
-                          "3-Pointers Made", "Pts + Rebs + Asts"]
 
         # Get game log (up to 10 games) and last 5 for trend
         game_log = nba_stats.get("gameLog", []) if nba_stats else []
@@ -1713,665 +1811,11 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             # Get opponent defense stats for matchup scoring
             opp_def_stats = team_defense_cache.get(opponent_abbr, {})
 
-                        # Calculate ranking score with all context (v5)
-
-                        prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier = calculate_prop_ranking_score(
-
-                            prop, player_averages, game_time_utc,
-
-                            lineup_status=lineup_status,
-
-                            hit_rate=hit_rate,
-
-                            trend_data=trend_data,
-
-                            opp_def_rank=opp_def_stats.get("def_rank"),
-
-                            opp_pace_rank=opp_def_stats.get("pace_rank"),
-
-                            player_advanced=player_adv,
-
-                            is_home=is_home_tonight,
-
-                            game_log=game_log,
-
-                            usage_vacuum_modifier=ep.get("usage_vacuum", 1.0)
-
-                        )
-
-            
-
-                        # Calculate matchup score for prop card (informational)
-
-                        matchup_score = calculate_matchup_score(
-
-                            opp_def_stats.get("def_rank"),
-
-                            opp_def_stats.get("pace_rank"),
-
-                            recommended_direction
-
-                        )
-
-            
-
-                        # Calculate efficiency score for prop card (informational)
-
-                        eff_score = calculate_player_efficiency_score(stat_name, player_adv)
-
-            
-
-                        # Minutes confidence (informational)
-
-                        _, avg_minutes = calculate_minutes_confidence(game_log)
-
-            
-
-                        # Format stat name
-
-                        short_name = stat_name.replace(
-
-                            "Points", "Pts").replace("Rebounds", "Reb")
-
-                        short_name = short_name.replace(
-
-                            "Assists", "Ast").replace("3-Pointers Made", "3PM")
-
-                        short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
-
-            
-
-                        try:
-
-                            over_odds = int(
-
-                                str(prop.get("over_american", "-110")).replace("+", ""))
-
-                        except:
-
-                            over_odds = -110
-
-                        try:
-
-                            under_odds = int(
-
-                                str(prop.get("under_american", "-110")).replace("+", ""))
-
-                        except:
-
-                            under_odds = -110
-
-            
-
-                        prop_card = {
-
-                            "player_id": str(player_id) if isinstance(player_id, int) else player_id,
-
-                            "name": player_name,
-
-                            "teamAbbr": team_abbr,
-
-                            "position": position,
-
-                            "imageName": image_url,
-
-                            "opponent": opponent,
-
-                            "gameTime": game_time,
-
-                            "gameTimeUTC": game_time_utc,
-
-                            "source": "underdog",
-
-                            "last_updated": datetime.datetime.now().isoformat(),
-
-                            # Single prop info
-
-                            "statName": short_name,
-
-                            "statNameFull": stat_name,
-
-                            "line": prop.get("line", 0),
-
-                            "overOdds": over_odds,
-
-                            "underOdds": under_odds,
-
-                            "propId": prop.get("id", str(uuid.uuid4())),
-
-                            # Ranking data
-
-                            "rankingScore": round(prop_score, 2),
-
-                            "edge": edge,
-
-                            "playerAverage": player_avg,
-
-                            "urgencyScore": urgency_score,
-
-                            "recommendedDirection": recommended_direction,
-
-                            # Matchup data
-
-                            "matchupScore": matchup_score,
-
-                            "oppDefRank": opp_def_stats.get("def_rank"),
-
-                            "oppPaceRank": opp_def_stats.get("pace_rank"),
-
-                            # Efficiency data (player advanced stats)
-
-                            "efficiencyScore": eff_score,
-
-                            "playerAdvanced": {
-
-                                "usgPct": round(player_adv["usg_pct"] * 100, 1) if player_adv else None,
-
-                                "tsPct": round(player_adv["ts_pct"] * 100, 1) if player_adv else None,
-
-                                "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
-
-                                "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
-
-                            } if player_adv else None,
-
-                            # Hit rate data (up to 10 games, recency-weighted)
-
-                            "hitRate": {
-
-                                "hits": hit_rate["hits"],
-
-                                "total": hit_rate["total"],
-
-                                "results": hit_rate["results"],
-
-                                "weightedPct": hit_rate.get("weightedPct", 0.0),
-
-                            },
-
-                            # Trend data
-
-                            "trendData": {
-
-                                "trend": trend_data.get("trend", "stable"),
-
-                                "declinePct": trend_data.get("decline_pct", 0),
-
-                                "surgePct": trend_data.get("surge_pct", 0),
-
-                                "recentAvg": trend_data.get("recent_avg", 0),
-
-                                "fullAvg": trend_data.get("full_avg", 0),
-
-                            },
-
-                            # v5 modifiers
-
-                            "isHome": is_home_tonight,
-
-                            "homeAwayModifier": ha_modifier,
-
-                            "minutesConfidence": min_modifier,
-
-                            "avgMinutes": avg_minutes,
-
-                            "usageVacuum": ep.get("usage_vacuum", 1.0),
-
-                            # Will be set after sorting
-
-                            "section": "topPicks",
-                "featured": False,
-                "trending": "up",
-                # Player averages for context
-                "playerAverages": {
-                    "pts": player_averages.get("pts", 0),
-                    "reb": player_averages.get("reb", 0),
-                    "ast": player_averages.get("ast", 0),
-                    "fg3m": player_averages.get("fg3m", 0)
-                },
-                # Injury and rest data
-                "restStatus": rest_status,  # "B2B" or ""
-                "teamInjuries": team_injuries,  # "OUT: J. Embiid | GTD: T. Maxey"
-                "oppInjuries": opp_injuries,
-                "opponentAbbr": opponent_abbr,
-                "lineupStatus": lineup_status,  # "STARTING", "GTD", or ""
-            }
-
-            all_prop_cards.append(prop_card)
-
-    print(f"📊 Created {len(all_prop_cards)} individual prop cards")
-
-    # 6. Sort and categorize props
-    # Sort by ranking score (highest first)
-    all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
-
-    # "forYou" section: top 5 best-ranked props for 5-leg parlay builders
-    for_you_count = min(5, len(all_prop_cards))
-    for i, card in enumerate(all_prop_cards[:for_you_count]):
-        card["section"] = "forYou"
-        card["featured"] = True
-
-    # "topPicks" section: props 6-20 (next best after forYou)
-    top_picks_start = for_you_count
-    top_picks_end = min(20, len(all_prop_cards))
-    top_picks_count = top_picks_end - top_picks_start
-
-    for i, card in enumerate(all_prop_cards[top_picks_start:top_picks_end]):
-        card["section"] = "topPicks"
-        card["featured"] = True
-
-    # Mark remaining cards as allProps
-    for card in all_prop_cards[top_picks_end:]:
-        card["section"] = "allProps"
-        card["featured"] = False
-
-    print(
-        f"✓ Categorized: {for_you_count} forYou (top 5), {top_picks_count} topPicks")
-
-    # 7. Clear old props and write to Firestore
-    db = firestore.client()
-
-    print("🗑️  Clearing old props collection...")
-    props_ref = db.collection("props")
-    old_docs = props_ref.stream()
-    deleted_count = 0
-    delete_batch = db.batch()
-
-    for doc in old_docs:
-        delete_batch.delete(doc.reference)
-        deleted_count += 1
-        if deleted_count % 400 == 0:
-            delete_batch.commit()
-            delete_batch = db.batch()
-
-    if deleted_count % 400 != 0:
-        delete_batch.commit()
-
-    print(f"🗑️  Deleted {deleted_count} old documents")
-
-    # Write new prop cards
-    batch = db.batch()
-    written_count = 0
-
-    for card in all_prop_cards:
-        # Create unique document ID: playerId_statName
-        doc_id = f"{card['player_id']}_{card['statName'].lower().replace(' ', '_')}"
-        card["id"] = doc_id  # Add id field for iOS
-
-        doc_ref = db.collection("props").document(doc_id)
-        batch.set(doc_ref, card)
-        written_count += 1
-
-        if written_count % 400 == 0:
-            batch.commit()
-            batch = db.batch()
-
-    if written_count % 400 != 0:
-        batch.commit()
-
-    print(f"\n{'='*60}")
-    print(f"=== DATA SAVED: Wrote {written_count} prop cards to Firestore ===")
-    print("="*60 + "\n")
-
-    print(f"\n{'='*60}")
-    print(
-        f"=== COMPLETE: {written_count} props ===")
-    print(f"=== Top Picks: {top_picks_count}, For You: {for_you_count} ===")
-    print("="*60 + "\n")
-
-    # Write refresh metadata so iOS app knows when data was last updated
-    db.collection("metadata").document("lastRefresh").set({
-        "completedAt": firestore.SERVER_TIMESTAMP,
-        "propsWritten": written_count,
-        "topPicks": top_picks_count,
-        "forYou": for_you_count,
-        "source": "batch_analyze",
-    })
-
-    return https_fn.Response(json.dumps({
-        "status": "success",
-        "message": f"Created {written_count} individual prop cards",
-        "props_written": written_count,
-        "top_picks": top_picks_count,
-        "for_you": for_you_count,
-        "source": "underdog_fantasy",
-        "espn_games_today": len(espn_games)
-    }), mimetype='application/json')
-
-
-# ============================================================
-# SCHEDULED FUNCTION - Runs automatically via Cloud Scheduler
-# ============================================================
-
-@scheduler_fn.on_schedule(
-    schedule="0 0-1,6-23 * * *",
-    timezone=scheduler_fn.Timezone("America/Los_Angeles"),
-    timeout_sec=540,
-    memory=2048
-)
-def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
-    """
-    Automatically refresh all player props hourly.
-    Includes player stat enrichment and team defense stats.
-    Creates individual prop cards (one document per prop).
-    """
-    print("\n" + "="*60)
-    print("=== SCHEDULED REFRESH - UNDERDOG + ESPN ===")
-    print(f"=== Time: {datetime.datetime.now().isoformat()} ===")
-    print("="*60 + "\n")
-
-    underdog_data = get_underdog_nba_props()
-    if not underdog_data["players"]:
-        print("No NBA props available")
-        return
-
-    espn_games = get_espn_nba_schedule()
-
-    # Fetch team defense stats for matchup analysis (single API call)
-    print("\n📊 Fetching team defense stats for matchup analysis...")
-    team_defense_cache = get_all_team_defense_stats()
-    print(f"✓ Cached defense stats for {len(team_defense_cache)} teams")
-
-    # Fetch player advanced stats (single API call for all ~500 players)
-    print("📊 Fetching player advanced stats...")
-    player_advanced_cache = get_all_player_advanced_stats()
-    print(f"✓ Cached advanced stats for {len(player_advanced_cache)} players")
-    
-    # Fetch player bio stats (Position, Team) for roster mapping
-    print("📊 Fetching player bio stats...")
-    bio_cache = get_all_player_bio_stats()
-    print(f"✓ Cached bio stats for {len(bio_cache)} players")
-    
-    # Build team rosters for Usage Vacuum calculation
-    team_rosters = {}
-    for pid, bio in bio_cache.items():
-        team = bio.get("team_abbr")
-        if not team: continue
-        if team not in team_rosters: team_rosters[team] = []
-        
-        usg = 0.0
-        if pid in player_advanced_cache:
-            usg = player_advanced_cache[pid].get("usg_pct", 0.0)
-            
-        team_rosters[team].append({
-            "id": pid,
-            "name": bio.get("name"),
-            "usg": usg
-        })
-
-    # Fetch injury reports, back-to-back info, and lineup confirmations
-    injuries_cache = get_nba_injuries()
-    b2b_cache = get_yesterdays_games()
-    lineup_cache = get_todays_lineups()
-
-    db = firestore.client()
-
-    # Enrich players with NBA stats - SMART SELECTION BY ODDS VALUE
-    # Prioritize players whose props have good odds (plus money or near-even)
-    print(
-        f"\nProcessing {len(underdog_data['players'])} players with props...")
-    players_to_process = underdog_data["players"]
-
-    # Score all props by odds value and find unique players with best opportunities
-    all_props_scored = []
-    for player_data in players_to_process:
-        player_id = player_data["player"].get("id")
-        for prop in player_data.get("props", []):
-            try:
-                over_odds = int(
-                    str(prop.get("over_american", "-110")).replace("+", ""))
-            except (ValueError, TypeError):
-                over_odds = -110
-
-            # Score: plus money = 100+, near-even = 90-99, standard = 50, bad = 0-49
-            if over_odds >= 100:
-                odds_score = 100 + over_odds
-            elif over_odds >= -105:
-                odds_score = 95
-            elif over_odds >= -110:
-                odds_score = 50
-            elif over_odds >= -115:
-                odds_score = 30
-            else:
-                odds_score = 10
-
-            all_props_scored.append({
-                "player_id": player_id,
-                "player_data": player_data,
-                "odds_score": odds_score
-            })
-
-    # Sort by odds value (best opportunities first)
-    all_props_scored.sort(key=lambda x: x["odds_score"], reverse=True)
-
-    # Get unique players from best props
-    seen_player_ids = set()
-    players_by_odds_value = []
-    for item in all_props_scored:
-        if item["player_id"] not in seen_player_ids:
-            seen_player_ids.add(item["player_id"])
-            players_by_odds_value.append(item["player_data"])
-
-    # Enrich ALL players with NBA API stats
-    players_to_enrich = players_by_odds_value
-
-    print(
-        f"  Will enrich {len(players_to_enrich)} players with NBA API")
-
-    enriched_players = []
-
-    def enrich_player(player_data):
-        player = player_data["player"]
-        player_name = f"{player.get('first_name', '')} {player.get('last_name', '')}".strip()
-        nba_stats = get_player_stats_quick(player_name, bio_cache=bio_cache)
-        return {
-            "underdog_player": player,
-            "underdog_props": player_data["props"],
-            "underdog_game": player_data.get("game", {}),
-            "underdog_team_abbr": player_data.get("team_abbr", ""),
-            "nba_stats": nba_stats,
-            "name": player_name,
-        }
-
-    # Enrich all players with NBA API (4 workers to avoid rate limiting)
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(enrich_player, p): p["player"].get(
-            "id") for p in players_to_enrich}
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                enriched_players.append(result)
-                if result.get("nba_stats"):
-                    print(f"✓ Enriched {result['name']}")
-                else:
-                    print(f"○ No NBA data for {result['name']}")
-            except Exception as e:
-                print(f"✗ Error: {e}")
-
-    print(f"\n📊 Processed {len(enriched_players)} total players\n")
-
-    # Calculate ranking scores
-    for ep in enriched_players:
-        nba_stats = ep.get("nba_stats") or {}
-        averages = nba_stats.get(
-            "averages", {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0})
-        last5_games = nba_stats.get("last5Games", [])
-        ud_game = ep.get("underdog_game", {})
-        game_time_utc = None
-        if ud_game.get("scheduled_at"):
-            try:
-                game_dt = datetime.datetime.fromisoformat(
-                    ud_game["scheduled_at"].replace('Z', '+00:00'))
-                game_time_utc = game_dt.isoformat()
-            except:
-                pass
-
-        # Get lineup status for player-level ranking
-        player_name_for_lineup = ep.get("name", "")
-        team_abbr_for_lineup = ep.get("underdog_team_abbr", "")
-        if nba_stats and nba_stats.get("team_code"):
-            team_abbr_for_lineup = nba_stats["team_code"]
-        # Validate team against game (handles traded players)
-        lineup_abbr = ud_game.get("abbreviated_title", "")
-        if team_abbr_for_lineup and lineup_abbr and " @ " in lineup_abbr:
-            away_l, home_l = lineup_abbr.split(" @ ")
-            away_l, home_l = away_l.strip(), home_l.strip()
-            if team_abbr_for_lineup not in (away_l, home_l):
-                ct = nba_stats.get("current_team", "") if nba_stats else ""
-                if ct and ct in (away_l, home_l):
-                    team_abbr_for_lineup = ct
-        ep_lineup_status = get_player_lineup_status(
-            player_name_for_lineup, lineup_cache, injuries_cache, team_abbr_for_lineup)
-            
-        # Determine if player is home tonight for ranking
-        is_home_tonight_rank = None
-        lineup_abbr = ud_game.get("abbreviated_title", "")
-        if team_abbr_for_lineup and lineup_abbr and " @ " in lineup_abbr:
-            _, home_l_check = lineup_abbr.split(" @ ")
-            is_home_tonight_rank = (team_abbr_for_lineup == home_l_check.strip())
-
-        # Calculate Usage Vacuum Modifier
-        usage_vacuum = calculate_usage_vacuum_score(team_abbr_for_lineup, injuries_cache, team_rosters)
-        ep["usage_vacuum"] = usage_vacuum
-
-        ranking_score, score_components = calculate_ranking_score(
-            {"averages": averages}, ep["underdog_props"], game_time_utc,
-            lineup_status=ep_lineup_status, last5_games=last5_games,
-            usage_vacuum_modifier=usage_vacuum,
-            is_home=is_home_tonight_rank,
-            game_log=nba_stats.get("gameLog", [])
-        )
-        ep["ranking_score"] = ranking_score
-        ep["player_averages"] = averages
-
-    # Sort by ranking score
-    enriched_players.sort(key=lambda x: x.get(
-        "ranking_score", 0), reverse=True)
-
-    # Build individual prop cards
-    all_prop_cards = []
-    priority_stats = ["Points", "Rebounds", "Assists",
-                      "3-Pointers Made", "Pts + Rebs + Asts"]
-
-    # Cache per-team context so teammates reuse the same lookups
-    team_context_cache = {}
-
-    for ep in enriched_players:
-        ud_player = ep["underdog_player"]
-        ud_props = ep["underdog_props"]
-        ud_game = ep.get("underdog_game", {})
-        nba_stats = ep.get("nba_stats")
-        player_averages = ep.get(
-            "player_averages", {"pts": 0, "reb": 0, "ast": 0, "fg3m": 0})
-
-        # Get player info
-        if nba_stats and nba_stats.get("team_code") and nba_stats["team_code"] != "UNK":
-            player_id = nba_stats["id"]
-            player_name = nba_stats["name"]
-            team_abbr = nba_stats["team_code"]
-            position = nba_stats["position"]
-            image_url = nba_stats["image"]
-        else:
-            player_id = ud_player.get("id", str(uuid.uuid4()))
-            player_name = ep["name"]
-            team_abbr = ep.get("underdog_team_abbr", "")
-            if not team_abbr:
-                abbr_title = ud_game.get("abbreviated_title", "")
-                if " @ " in abbr_title:
-                    away, home = abbr_title.split(" @ ")
-                    team_abbr = away
-            position = ud_player.get("position_name", "N/A")
-            image_url = ud_player.get("image_url", "")
-            if nba_stats and nba_stats.get("image"):
-                image_url = nba_stats["image"]
-
-        # Validate team_abbr matches the game (handles traded players)
-        abbr_title = ud_game.get("abbreviated_title", "")
-        if team_abbr and abbr_title and " @ " in abbr_title:
-            away_t, home_t = abbr_title.split(" @ ")
-            away_t, home_t = away_t.strip(), home_t.strip()
-            if team_abbr not in (away_t, home_t):
-                ct = nba_stats.get("current_team", "") if nba_stats else ""
-                if ct and ct in (away_t, home_t):
-                    print(f"  ⚠️ Trade fix: {player_name} {team_abbr}->{ct} (game: {abbr_title})")
-                    team_abbr = ct
-                else:
-                    print(f"  ⚠️ Cannot resolve team for {player_name} (team={team_abbr}, game={abbr_title}), using {away_t}")
-                    team_abbr = away_t
-
-        opponent = abbr_title if abbr_title else ud_game.get(
-            "short_title", "TBD")
-
-        game_time = "Tonight"
-        game_time_utc = None
-        if ud_game.get("scheduled_at"):
-            try:
-                game_dt = datetime.datetime.fromisoformat(
-                    ud_game["scheduled_at"].replace('Z', '+00:00'))
-                game_time = game_dt.strftime("%I:%M %p UTC")
-                game_time_utc = game_dt.isoformat()
-            except:
-                pass
-
-        # Get game log (up to 10 games) and last 5 for trend
-        game_log = nba_stats.get("gameLog", []) if nba_stats else []
-        last5_games = nba_stats.get("last5Games", []) if nba_stats else []
-
-        # Determine if player is home tonight
-        is_home_tonight = None
-        if team_abbr and abbr_title and " @ " in abbr_title:
-            _, home_t_check = abbr_title.split(" @ ")
-            is_home_tonight = (team_abbr == home_t_check.strip())
-
-        # Get team context from cache or compute once per team
-        if team_abbr and team_abbr in team_context_cache:
-            tc = team_context_cache[team_abbr]
-            opponent_abbr = tc["opponent_abbr"]
-            team_injuries = tc["team_injuries"]
-            opp_injuries = tc["opp_injuries"]
-            rest_status = tc["rest_status"]
-        else:
-            opponent_abbr = get_opponent_abbrev(opponent, team_abbr)
-            team_injuries = get_team_injuries_summary(team_abbr, injuries_cache)
-            opp_injuries = get_team_injuries_summary(opponent_abbr, injuries_cache)
-            rest_status = get_player_rest_status(team_abbr, b2b_cache)
-            if team_abbr:
-                team_context_cache[team_abbr] = {
-                    "opponent_abbr": opponent_abbr,
-                    "team_injuries": team_injuries,
-                    "opp_injuries": opp_injuries,
-                    "rest_status": rest_status,
-                }
-
-        # Lineup status is always per-player
-        lineup_status = get_player_lineup_status(
-            player_name, lineup_cache, injuries_cache, team_abbr)
-
-        # Skip OUT players entirely - no prop cards created
-        if lineup_status == "OUT":
-            continue
-
-        # Look up player advanced stats (type-safe int key)
-        player_adv = None
-        if isinstance(player_id, int):
-            player_adv = player_advanced_cache.get(player_id)
-        elif isinstance(player_id, str) and player_id.isdigit():
-            player_adv = player_advanced_cache.get(int(player_id))
-            
-        # Get opp defense stats
-        opp_def_stats = team_defense_cache.get(opponent_abbr, {})
-
-        for prop in ud_props:
-            stat_name = prop.get("stat_name", "")
-            if stat_name not in priority_stats:
-                continue
-
-            # Calculate hit rate (full game log) and trend (last 5) BEFORE ranking
-            line = float(prop.get("line", 0))
-            hit_rate = calculate_hit_rate(game_log if game_log else last5_games, stat_name, line)
-            trend_data = calculate_trend_score(last5_games, stat_name)
-
-            # Calculate ranking score with all context (v5)
+            # Resolve stat-specific opponent rank (e.g. OPP_FG3M_RANK for 3PM props)
+            opp_opp_stats = opponent_stats_cache.get(opponent_abbr, {})
+            opp_stat_rank = _resolve_opponent_stat_rank(stat_name, opp_opp_stats)
+
+            # Calculate ranking score with all context (v6)
             prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
@@ -2382,14 +1826,16 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 player_advanced=player_adv,
                 is_home=is_home_tonight,
                 game_log=game_log,
-                usage_vacuum_modifier=ep.get("usage_vacuum", 1.0)
+                usage_vacuum_modifier=ep.get("usage_vacuum", 1.0),
+                opp_stat_rank=opp_stat_rank
             )
 
-            # Matchup score (informational)
+            # Calculate matchup score for prop card (informational)
             matchup_score = calculate_matchup_score(
                 opp_def_stats.get("def_rank"),
                 opp_def_stats.get("pace_rank"),
-                recommended_direction
+                recommended_direction,
+                opp_stat_rank=opp_stat_rank
             )
 
             # Calculate efficiency score for prop card (informational)
@@ -2398,6 +1844,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             # Minutes confidence (informational)
             _, avg_minutes = calculate_minutes_confidence(game_log)
 
+            # Format stat name
             short_name = stat_name.replace(
                 "Points", "Pts").replace("Rebounds", "Reb")
             short_name = short_name.replace(
@@ -2407,13 +1854,22 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
             try:
                 over_odds = int(
                     str(prop.get("over_american", "-110")).replace("+", ""))
-            except:
+            except Exception:
                 over_odds = -110
             try:
                 under_odds = int(
                     str(prop.get("under_american", "-110")).replace("+", ""))
-            except:
+            except Exception:
                 under_odds = -110
+
+            # Determine HOT/FADE/UP trending status
+            trending_status = _determine_trending_status(prop_score, trend_data, hit_rate)
+
+            # Compute new modifiers for Firestore storage
+            consistency_mod, cv_value = calculate_consistency_modifier(game_log, stat_name, recommended_direction)
+            rest_days_val = calculate_rest_days(game_log, game_time_utc)
+            rest_mod = calculate_rest_modifier(rest_days_val, recommended_direction)
+            sample_conf = calculate_sample_size_confidence(game_log)
 
             prop_card = {
                 "player_id": str(player_id) if isinstance(player_id, int) else player_id,
@@ -2426,12 +1882,14 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "gameTimeUTC": game_time_utc,
                 "source": "underdog",
                 "last_updated": datetime.datetime.now().isoformat(),
+                # Single prop info
                 "statName": short_name,
                 "statNameFull": stat_name,
                 "line": prop.get("line", 0),
                 "overOdds": over_odds,
                 "underOdds": under_odds,
                 "propId": prop.get("id", str(uuid.uuid4())),
+                # Ranking data
                 "rankingScore": round(prop_score, 2),
                 "edge": edge,
                 "playerAverage": player_avg,
@@ -2441,6 +1899,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "matchupScore": matchup_score,
                 "oppDefRank": opp_def_stats.get("def_rank"),
                 "oppPaceRank": opp_def_stats.get("pace_rank"),
+                "oppStatRank": opp_stat_rank,
                 # Efficiency data (player advanced stats)
                 "efficiencyScore": eff_score,
                 "playerAdvanced": {
@@ -2449,6 +1908,7 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                     "rebPct": round(player_adv["reb_pct"] * 100, 1) if player_adv else None,
                     "astPct": round(player_adv["ast_pct"] * 100, 1) if player_adv else None,
                 } if player_adv else None,
+                # Hit rate data (up to 10 games, recency-weighted)
                 "hitRate": {
                     "hits": hit_rate["hits"],
                     "total": hit_rate["total"],
@@ -2469,9 +1929,20 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "minutesConfidence": min_modifier,
                 "avgMinutes": avg_minutes,
                 "usageVacuum": ep.get("usage_vacuum", 1.0),
+                # v6 modifiers
+                "consistencyModifier": round(consistency_mod, 3),
+                "coefficientOfVariation": cv_value,
+                "restModifier": round(rest_mod, 3),
+                "restDays": rest_days_val,
+                "sampleSizeConfidence": round(sample_conf, 2),
+                "gamesPlayed": len(game_log),
+                # Will be set after sorting
                 "section": "topPicks",
                 "featured": False,
-                "trending": "up",
+                # HOT/FADE badge status (computed from trend + score + hit rate)
+                "trending": trending_status,
+                "isFade": trending_status == "fade",
+                # Player averages for context
                 "playerAverages": {
                     "pts": player_averages.get("pts", 0),
                     "reb": player_averages.get("reb", 0),
@@ -2483,20 +1954,23 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
                 "teamInjuries": team_injuries,
                 "oppInjuries": opp_injuries,
                 "opponentAbbr": opponent_abbr,
-                "lineupStatus": lineup_status,  # "STARTING", "GTD", or ""
+                "lineupStatus": lineup_status,
             }
+
             all_prop_cards.append(prop_card)
 
     print(f"📊 Created {len(all_prop_cards)} individual prop cards")
 
-    # Sort and categorize
+    # 10. Sort and categorize props
     all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
 
+    # "forYou" section: top 5 best-ranked props for 5-leg parlay builders
     for_you_count = min(5, len(all_prop_cards))
     for i, card in enumerate(all_prop_cards[:for_you_count]):
         card["section"] = "forYou"
         card["featured"] = True
 
+    # "topPicks" section: props 6-20 (next best after forYou)
     top_picks_start = for_you_count
     top_picks_end = min(20, len(all_prop_cards))
     top_picks_count = top_picks_end - top_picks_start
@@ -2505,39 +1979,123 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
         card["section"] = "topPicks"
         card["featured"] = True
 
+    # Mark remaining cards as allProps
     for card in all_prop_cards[top_picks_end:]:
         card["section"] = "allProps"
         card["featured"] = False
 
-    # Clear old props and write new ones
+    # Count trending badges
+    hot_count = sum(1 for c in all_prop_cards if c["trending"] == "hot")
+    fade_count = sum(1 for c in all_prop_cards if c["trending"] == "fade")
+    print(f"✓ Categorized: {for_you_count} forYou, {top_picks_count} topPicks")
+    print(f"🔥 HOT badges: {hot_count}, ⚠️ FADE badges: {fade_count}")
+
+    # 11. Clear old props and write to Firestore (batched)
+    db = firestore.client()
+
     print("🗑️  Clearing old props collection...")
     props_ref = db.collection("props")
-    old_docs = list(props_ref.stream())
-    for doc in old_docs:
-        doc.reference.delete()
-    print(f"🗑️  Deleted {len(old_docs)} old documents")
+    old_docs = props_ref.stream()
+    deleted_count = 0
+    delete_batch = db.batch()
 
-    # Write to Firestore
+    for doc in old_docs:
+        delete_batch.delete(doc.reference)
+        deleted_count += 1
+        if deleted_count % 400 == 0:
+            delete_batch.commit()
+            delete_batch = db.batch()
+
+    if deleted_count % 400 != 0:
+        delete_batch.commit()
+
+    print(f"🗑️  Deleted {deleted_count} old documents")
+
+    # Write new prop cards (batched)
+    write_batch = db.batch()
+    written_count = 0
+
     for card in all_prop_cards:
         doc_id = f"{card['player_id']}_{card['statName'].lower().replace(' ', '_')}"
         card["id"] = doc_id
-        db.collection("props").document(doc_id).set(card)
+
+        doc_ref = db.collection("props").document(doc_id)
+        write_batch.set(doc_ref, card)
+        written_count += 1
+
+        if written_count % 400 == 0:
+            write_batch.commit()
+            write_batch = db.batch()
+
+    if written_count % 400 != 0:
+        write_batch.commit()
 
     print(f"\n{'='*60}")
-    print(f"=== DATA SAVED: Wrote {len(all_prop_cards)} prop cards ===")
+    print(f"=== DATA SAVED: Wrote {written_count} prop cards to Firestore ===")
     print("="*60 + "\n")
 
-    print(f"\n{'='*60}")
-    print(
-        f"=== SCHEDULED REFRESH COMPLETE: {len(all_prop_cards)} props ===")
-    print(f"=== Top Picks: {top_picks_count}, For You: {for_you_count} ===")
-    print("="*60 + "\n")
-
-    # Write refresh metadata so iOS app knows when data was last updated
+    # 12. Write refresh metadata
     db.collection("metadata").document("lastRefresh").set({
         "completedAt": firestore.SERVER_TIMESTAMP,
-        "propsWritten": len(all_prop_cards),
+        "propsWritten": written_count,
         "topPicks": top_picks_count,
         "forYou": for_you_count,
-        "source": "scheduled_refresh",
+        "hotProps": hot_count,
+        "fadeProps": fade_count,
+        "source": source,
     })
+
+    return {
+        "props_written": written_count,
+        "top_picks": top_picks_count,
+        "for_you": for_you_count,
+        "espn_games_today": len(espn_games),
+    }
+
+
+# ============================================================
+# HTTP FUNCTION - Manually triggered via HTTP request
+# ============================================================
+
+@https_fn.on_request(timeout_sec=540, memory=2048)
+def batch_analyze(req: https_fn.Request) -> https_fn.Response:
+    """
+    Fetch NBA player props from Underdog Fantasy and rank with data-driven scoring.
+    Uses ESPN for schedule data and nba_api for player stats enrichment.
+    """
+    result = _run_analysis_pipeline(source="batch_analyze", max_enrich=60)
+
+    if result is None:
+        return https_fn.Response(json.dumps({
+            "status": "error",
+            "message": "No NBA player props found from Underdog Fantasy",
+            "note": "This may happen if no NBA games are scheduled today"
+        }), status=404, mimetype='application/json')
+
+    return https_fn.Response(json.dumps({
+        "status": "success",
+        "message": f"Created {result['props_written']} individual prop cards",
+        "props_written": result["props_written"],
+        "top_picks": result["top_picks"],
+        "for_you": result["for_you"],
+        "source": "underdog_fantasy",
+        "espn_games_today": result["espn_games_today"]
+    }), mimetype='application/json')
+
+
+# ============================================================
+# SCHEDULED FUNCTION - Runs automatically via Cloud Scheduler
+# ============================================================
+
+@scheduler_fn.on_schedule(
+    schedule="0 0-1,6-23 * * *",
+    timezone=scheduler_fn.Timezone("America/Los_Angeles"),
+    timeout_sec=540,
+    memory=2048,
+)
+def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
+    """
+    Automatically refresh all player props hourly.
+    Enriches all players (no cap) with NBA stats.
+    """
+    _run_analysis_pipeline(source="scheduled_refresh", max_enrich=0)

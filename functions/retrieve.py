@@ -78,6 +78,46 @@ async def get_player_data(player_name):
         "last_10_games": recent_games
     }
 
+
+# Bulk fetch stat-specific opponent stats (single API call for all 30 teams)
+def get_all_team_opponent_stats() -> dict:
+    """
+    Fetch opponent (allowed) stats for all NBA teams in one API call.
+    Returns dict keyed by team abbreviation with opp_pts_rank, opp_reb_rank,
+    opp_ast_rank, opp_fg3m_rank (rank 1 = best defense, 30 = worst).
+    """
+    print("DEBUG: Fetching opponent stats for all 30 NBA teams...")
+
+    try:
+        time.sleep(0.5)
+        stats = leaguedashteamstats.LeagueDashTeamStats(
+            season='2025-26',
+            measure_type_detailed_defense='Opponent'
+        )
+        df = stats.get_data_frames()[0]
+
+        opp_stats = {}
+        for _, row in df.iterrows():
+            team_id = int(row['TEAM_ID'])
+            nba_team = teams.find_team_name_by_id(team_id)
+            team_abbrev = nba_team['abbreviation'] if nba_team else ''
+
+            if team_abbrev:
+                opp_stats[team_abbrev] = {
+                    "opp_pts_rank": int(row.get('OPP_PTS_RANK', 15)),
+                    "opp_reb_rank": int(row.get('OPP_REB_RANK', 15)),
+                    "opp_ast_rank": int(row.get('OPP_AST_RANK', 15)),
+                    "opp_fg3m_rank": int(row.get('OPP_FG3M_RANK', 15)),
+                }
+
+        print(f"DEBUG: Fetched opponent stats for {len(opp_stats)} teams")
+        return opp_stats
+
+    except Exception as e:
+        print(f"ERROR fetching opponent stats: {e}")
+        return {}
+
+
 # Bulk fetch all team defense stats (single API call for all 30 teams)
 def get_all_team_defense_stats() -> dict:
     """

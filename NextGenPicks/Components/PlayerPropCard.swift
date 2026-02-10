@@ -3,7 +3,6 @@ import SwiftUI
 struct PlayerPropCard: View {
     let player: PlayerCardData
     @State private var showingMoreMarkets: Bool = false
-    @State private var showingPlayerDetail: Bool = false
     @State private var showingRankingBreakdown: Bool = false
 
     private var recommendation: String? {
@@ -239,13 +238,15 @@ struct PlayerPropCard: View {
                     HStack(spacing: 12) {
                         // Edge indicator
                         if let edge = player.edge, let avg = player.playerAverage, edge != 0 {
+                            let edgeConfirmsDirection = (player.recommendedDirection == "Under" && edge < 0) ||
+                                                        (player.recommendedDirection != "Under" && edge > 0)
                             HStack(spacing: 4) {
                                 Image(systemName: edge > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                                     .font(.caption2)
                                 Text("Avg: \(String(format: "%.1f", avg))")
                                     .font(.caption2)
                             }
-                            .foregroundStyle(edge > 0 ? Color.brandEmerald : Color.brandRed)
+                            .foregroundStyle(edgeConfirmsDirection ? Color.brandEmerald : Color.brandRed)
                         }
 
                         // Hit rate indicator (Last 5 games) - direction-aware
@@ -817,7 +818,7 @@ struct RankingBreakdownSheet: View {
                         .font(.caption2)
                         .foregroundStyle(Color.brandEmerald)
                 }
-                Text("Missing teammates opening up \(String(format: "%.0f%%", (mod - 1.0) * 100 * 2)) usage potential.")
+                Text("Missing teammates opening up \(String(format: "%.0f%%", (mod - 1.0) * 100)) usage potential.")
                     .font(.caption2)
                     .foregroundStyle(Color.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
