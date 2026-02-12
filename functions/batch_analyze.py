@@ -643,6 +643,7 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     # Extreme matchup: Edge 35%, Matchup 30% (sum stays 1.0)
     # Hit rate reduced from 20%→10%: too correlated with edge on small samples
     total = (edge_score * edge_weight) + (matchup_score * matchup_weight) + (hit_rate_score * 0.10) + (efficiency_score * 0.10) + (odds_score * 0.15)
+    pre_modifier = total
 
     # Line magnitude dampener — low lines (e.g. 0.5 3PM) are inherently volatile
     if line < 2.0:
@@ -764,6 +765,8 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     total *= sample_conf
 
     # Final clamp
+    if total < pre_modifier:
+        total = max(total, pre_modifier * 0.4)
     total = max(0.0, min(10.0, total))
 
     return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction, round(ha_modifier, 3), round(min_modifier, 3), round(role_change_dampener, 3), round(line_divergence_dampener, 3)
