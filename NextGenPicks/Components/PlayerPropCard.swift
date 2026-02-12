@@ -486,7 +486,10 @@ struct RankingBreakdownSheet: View {
     // Recompute component scores from stored data to show the math
     private var edgeScore: Double {
         guard let edge = player.edge, let line = player.mainProp?.line, line > 0 else { return 0 }
-        return min(10.0, (abs(edge) / line) * 40.0)
+        // Blended: 70% percentage-based + 30% absolute (matches backend v6)
+        let pctEdgeScore = min(10.0, (abs(edge) / line) * 40.0)
+        let absEdgeScore = min(10.0, abs(edge) * 2.0)
+        return (pctEdgeScore * 0.70) + (absEdgeScore * 0.30)
     }
 
     private var hitRateScore: Double {
@@ -526,8 +529,19 @@ struct RankingBreakdownSheet: View {
             let direction = player.recommendedDirection == "Over" ? "penalty" : "boost"
             return "\(direction) based on \(String(format: "%.0f", penalty))% decline"
         } else if td.trend == "surging" {
-            let direction = player.recommendedDirection == "Over" ? "1.05x boost" : "0.95x risk penalty"
-            return "\(direction) (Surging)"
+            if player.recommendedDirection == "Over" {
+                return "1.05x boost (Surging)"
+            } else {
+                let line = player.mainProp?.line ?? 0
+                let recentAvg = td.recentAvg
+                if recentAvg >= line && line > 0 {
+                    return String(format: "Heavy penalty — recent avg %.1f is ABOVE line %.1f (role change)", recentAvg, line)
+                } else if recentAvg >= line * 0.85 && line > 0 {
+                    return String(format: "0.85x penalty — recent avg %.1f is near line %.1f", recentAvg, line)
+                } else {
+                    return "0.95x risk penalty (Surging)"
+                }
+            }
         }
         return nil
     }
@@ -552,6 +566,32 @@ struct RankingBreakdownSheet: View {
         return String(format: "%.2fx (%@ - Missing teammates)", mod, directionLabel)
     }
 
+    private var lineMagnitudeModifier: String? {
+        guard let line = player.mainProp?.line else { return nil }
+        if line < 2.0 {
+            return "0.88x (Low line — high volatility)"
+        } else if line < 4.0 {
+            return "0.94x (Small stat — moderate volatility)"
+        }
+        return nil
+    }
+
+    private var roleChangeDampenerModifier: String? {
+        guard let dampener = player.roleChangeDampener, dampener < 1.0 else { return nil }
+        let pct = Int(round((1.0 - dampener) * 100))
+        return "\(pct)% edge dampened (injury-adjusted line)"
+    }
+
+    private var lineDivergenceDampenerModifier: String? {
+        guard let dampener = player.lineDivergenceDampener, dampener < 1.0 else { return nil }
+        let pct = Int(round((1.0 - dampener) * 100))
+        guard let avg = player.playerAverage, let line = player.mainProp?.line, line > 0 else {
+            return "\(pct)% dampened (line divergence)"
+        }
+        let divergePct = Int(round(((line - avg) / avg) * 100))
+        return "\(pct)% dampened — line is \(divergePct)% above avg (books expect expanded role)"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -573,6 +613,7 @@ struct RankingBreakdownSheet: View {
 
                         edgeRow
                         matchupRow
+                        dvpRow
                         hitRateRow
                         efficiencyRow
                         oddsRow
@@ -580,7 +621,7 @@ struct RankingBreakdownSheet: View {
                     }
 
                     // Modifiers
-                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil {
+                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil || lineMagnitudeModifier != nil || roleChangeDampenerModifier != nil || lineDivergenceDampenerModifier != nil {
                         Divider().background(Color.border)
                         modifiersSection
                     }
@@ -661,15 +702,19 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v6)")
+            Text("Formula (v9)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
-            Text("(Edge x 0.35) + (Matchup x 0.20-25) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
+            Text("(Edge x 0.40) + (Matchup x 0.25-30) + (Odds x 0.15) + (Eff x 0.10) + (Hit Rate x 0.10)")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Directional Modifiers: Lineup, Trend, Venue, Volume, Usage Vacuum")
+            Text("Averages: Recency-weighted trimmed mean | Real DvP matchup (position-filtered)")
+                .font(.caption2)
+                .foregroundStyle(Color.secondaryText.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Modifiers: Lineup, Trend, Venue, Volume, Usage Vacuum, Line Size, Role Change")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
@@ -686,7 +731,7 @@ struct RankingBreakdownSheet: View {
         ComponentRow(
             icon: "arrow.up.arrow.down",
             label: "Edge",
-            weight: "35%",
+            weight: "40%",
             score: edgeScore,
             color: .brandEmerald,
             details: edgeDetails
@@ -698,14 +743,19 @@ struct RankingBreakdownSheet: View {
         let edge = player.edge ?? (avg - line)
         let pct = (abs(edge) / (line > 0 ? line : 1)) * 100
         let dir = edge >= 0 ? "above" : "below"
-        return "Avg \(String(format: "%.1f", avg)) is \(String(format: "%.1f%%", pct)) \(dir) the line (\(String(format: "%.1f", line)))"
+        var detail = "Avg \(String(format: "%.1f", avg)) is \(String(format: "%.1f%%", pct)) \(dir) line \(String(format: "%.1f", line)) | Edge: \(String(format: "%.1f", abs(edge))) pts"
+        if let dampener = player.roleChangeDampener, dampener < 1.0 {
+            let dampenedPct = Int(round((1.0 - dampener) * 100))
+            detail += " | Dampened \(dampenedPct)% (line adjusted for injuries)"
+        }
+        return detail
     }
 
     private var matchupRow: some View {
         ComponentRow(
             icon: "shield.lefthalf.filled",
             label: "Matchup",
-            weight: "20-25%",
+            weight: "25-30%",
             score: player.matchupScore ?? 5.0,
             color: .brandBlue,
             details: matchupDetails
@@ -726,11 +776,122 @@ struct RankingBreakdownSheet: View {
         return parts.isEmpty ? "Default (neutral)" : parts.joined(separator: " | ")
     }
 
+    // MARK: - DvP Row
+
+    private var dvpRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let dvpRank = player.dvpRank {
+                let dvpScore = dvpScoreValue(rank: dvpRank)
+                HStack {
+                    Image(systemName: "person.fill.viewfinder")
+                        .font(.caption)
+                        .foregroundStyle(Color(hex: "06b6d4"))
+                        .frame(width: 16)
+                    Text("Def vs Position")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                    Text("DvP")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondaryText)
+                    Spacer()
+                    Text("#\(dvpRank)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(dvpColor(rank: dvpRank))
+                    Text("/ 30")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondaryText)
+                }
+
+                // Score bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(hex: "06b6d4").opacity(0.15))
+                            .frame(height: 6)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(dvpColor(rank: dvpRank))
+                            .frame(width: geo.size.width * min(1.0, dvpScore / 10.0), height: 6)
+                    }
+                }
+                .frame(height: 6)
+
+                // Details
+                Text(dvpDetails)
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(player.dvpRank != nil ? 10 : 0)
+        .background(player.dvpRank != nil ? Color.surface : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func dvpScoreValue(rank: Int) -> Double {
+        // Convert rank to a 0-10 score for the bar
+        // Rank 30 (worst D) = 10.0 (best for Over), Rank 1 (best D) = 0.3
+        let direction = player.recommendedDirection ?? "Over"
+        if direction == "Over" {
+            return Double(rank) / 30.0 * 10.0
+        } else {
+            return Double(31 - rank) / 30.0 * 10.0
+        }
+    }
+
+    private func dvpColor(rank: Int) -> Color {
+        let direction = player.recommendedDirection ?? "Over"
+        if direction == "Over" {
+            if rank >= 18 { return .brandEmerald }   // favorable + elite
+            if rank >= 12 { return .brandOrange }    // neutral
+            return .brandRed                         // tough
+        } else {
+            if rank <= 12 { return .brandEmerald }   // favorable + elite
+            if rank <= 18 { return .brandOrange }    // neutral
+            return .brandRed                         // tough
+        }
+    }
+
+    private var dvpDetails: String {
+        guard let dvpRank = player.dvpRank else { return "No DvP data" }
+        let posLabel: String
+        switch player.dvpGroup {
+        case "G": posLabel = "Guards"
+        case "C": posLabel = "Centers"
+        default: posLabel = "Forwards"
+        }
+        let direction = player.recommendedDirection ?? "Over"
+        let opp = player.opponentAbbr ?? "OPP"
+
+        if direction == "Over" {
+            if dvpRank >= 25 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — elite matchup for Over"
+            } else if dvpRank >= 18 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — favorable for Over"
+            } else if dvpRank >= 12 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — neutral matchup"
+            } else {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — tough matchup for Over"
+            }
+        } else {
+            if dvpRank <= 5 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — elite matchup for Under"
+            } else if dvpRank <= 12 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — favorable for Under"
+            } else if dvpRank <= 18 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — neutral matchup"
+            } else {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — tough matchup for Under"
+            }
+        }
+    }
+
     private var hitRateRow: some View {
         ComponentRow(
             icon: "target",
             label: "Hit Rate",
-            weight: "20%",
+            weight: "10%",
             score: hitRateScore,
             color: .brandOrange,
             details: hitRateDetails
@@ -892,6 +1053,39 @@ struct RankingBreakdownSheet: View {
                         .font(.caption)
                         .foregroundStyle(Color.brandEmerald)
                     Text("Teammates: \(uv)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let lm = lineMagnitudeModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.line.downtrend.xyaxis")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandOrange)
+                    Text("Line Size: \(lm)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let rc = roleChangeDampenerModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandOrange)
+                    Text("Role Change: \(rc)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let ld = lineDivergenceDampenerModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.bubble.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandRed)
+                    Text("Line Skepticism: \(ld)")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                 }
