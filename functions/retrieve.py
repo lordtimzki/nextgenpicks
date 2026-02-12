@@ -118,6 +118,50 @@ def get_all_team_opponent_stats() -> dict:
         return {}
 
 
+# Bulk fetch Defense vs Position (DvP) stats — 3 API calls (G, F, C)
+def get_dvp_stats() -> dict:
+    """
+    Fetch real Defense vs Position stats for all 30 teams.
+    Makes 3 API calls: one per position group (Guard, Forward, Center).
+    Returns dict keyed by (team_abbr, position_code) with stat-specific opp ranks.
+    Example: dvp_cache[("BOS", "G")] = {"opp_pts_rank": 5, "opp_reb_rank": 20, ...}
+    """
+    print("DEBUG: Fetching Defense vs Position (DvP) stats (3 calls: G, F, C)...")
+
+    dvp_cache = {}
+    for pos in ["G", "F", "C"]:
+        try:
+            time.sleep(0.6)
+            stats = leaguedashteamstats.LeagueDashTeamStats(
+                season='2025-26',
+                measure_type_detailed_defense='Opponent',
+                player_position_abbreviation_nullable=pos
+            )
+            df = stats.get_data_frames()[0]
+
+            for _, row in df.iterrows():
+                team_id = int(row['TEAM_ID'])
+                nba_team = teams.find_team_name_by_id(team_id)
+                team_abbrev = nba_team['abbreviation'] if nba_team else ''
+                if not team_abbrev:
+                    continue
+
+                dvp_cache[(team_abbrev, pos)] = {
+                    "opp_pts_rank": int(row.get('OPP_PTS_RANK', 15)),
+                    "opp_reb_rank": int(row.get('OPP_REB_RANK', 15)),
+                    "opp_ast_rank": int(row.get('OPP_AST_RANK', 15)),
+                    "opp_fg3m_rank": int(row.get('OPP_FG3M_RANK', 15)),
+                }
+
+            print(f"DEBUG: Fetched DvP for position '{pos}' — {sum(1 for k in dvp_cache if k[1] == pos)} teams")
+
+        except Exception as e:
+            print(f"ERROR fetching DvP stats for position {pos}: {e}")
+
+    print(f"DEBUG: Total DvP entries: {len(dvp_cache)} (expected ~90)")
+    return dvp_cache
+
+
 # Bulk fetch all team defense stats (single API call for all 30 teams)
 def get_all_team_defense_stats() -> dict:
     """

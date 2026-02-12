@@ -13,7 +13,7 @@ import uuid
 from datetime import timezone
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats, get_all_player_bio_stats, get_all_team_opponent_stats
+from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats, get_all_player_bio_stats, get_all_team_opponent_stats, get_dvp_stats
 
 # Note: Firebase is initialized in main.py which imports this module
 
@@ -390,50 +390,60 @@ def calculate_urgency_score(game_time_utc: str) -> float:
 
 
 
-def _dvp_affinity(position: str, stat_key: str) -> float:
+def _position_to_dvp_group(position: str) -> str:
     """
-    Defense-vs-Position affinity: how much a position exploits a defensive
-    weakness in a particular stat. Returns a multiplier applied to the
-    matchup score's deviation from neutral (5.0).
-
-    >1.0 = this position benefits MORE from the matchup signal
-    <1.0 = this position benefits LESS (matchup is less relevant)
-    =1.0 = no position adjustment
-
-    Based on positional tendencies in NBA:
-    - Guards drive scoring & assists, dominate 3PM
-    - Centers dominate rebounds, moderate scoring
-    - Forwards are balanced across stats
+    Map a full position string (e.g. "Guard", "Forward-Center", "Center")
+    to the NBA API position code used in DvP lookups: "G", "F", or "C".
     """
-    if not position or not stat_key:
-        return 1.0
-
+    if not position:
+        return "F"  # default to Forward (neutral)
     pos = position.lower()
-    # Classify: Guard, Forward, Center (handle hyphenated like "Forward-Guard")
-    is_guard = "guard" in pos
-    is_center = "center" in pos
-    # Forward-Guard → has both, lean guard. Forward-Center → lean center.
-    # Pure Forward → balanced.
+    if "guard" in pos:
+        return "G"
+    elif "center" in pos:
+        return "C"
+    return "F"
 
-    # Affinity matrix: how much each position group benefits from matchup signal
-    affinities = {
-        #          PTS   REB   AST   FG3M  PRA   pts_reb  pts_ast  reb_ast
-        "guard":  {"pts": 1.15, "reb": 0.65, "ast": 1.20, "fg3m": 1.25,
-                   "pra": 1.05, "pts_reb": 0.90, "pts_ast": 1.15, "reb_ast": 0.85},
-        "center": {"pts": 0.85, "reb": 1.35, "ast": 0.70, "fg3m": 0.40,
-                   "pra": 0.95, "pts_reb": 1.10, "pts_ast": 0.75, "reb_ast": 1.05},
-        "forward":{"pts": 1.00, "reb": 1.00, "ast": 0.85, "fg3m": 1.00,
-                   "pra": 1.00, "pts_reb": 1.00, "pts_ast": 0.90, "reb_ast": 0.95},
-    }
 
-    if is_guard and is_center:
-        return 1.0  # Unusual combo, stay neutral
-    elif is_guard:
-        return affinities["guard"].get(stat_key, 1.0)
-    elif is_center:
-        return affinities["center"].get(stat_key, 1.0)
-    else:
-        return affinities["forward"].get(stat_key, 1.0)
+def _resolve_dvp_stat_rank(stat_name: str, dvp_entry: dict) -> int | None:
+    """
+    Given a DvP cache entry for a (team, position), resolve the
+    stat-specific opponent rank. Same logic as _resolve_opponent_stat_rank
+    but operates on a DvP-filtered entry.
+    """
+    if not dvp_entry:
+        return None
+
+    stat_lower = stat_name.lower()
+
+    # Combined stats first
+    if "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        pts_r = dvp_entry.get("opp_pts_rank", 15)
+        reb_r = dvp_entry.get("opp_reb_rank", 15)
+        ast_r = dvp_entry.get("opp_ast_rank", 15)
+        return int(pts_r * 0.5 + reb_r * 0.25 + ast_r * 0.25)
+    elif "pts + reb" in stat_lower:
+        pts_r = dvp_entry.get("opp_pts_rank", 15)
+        reb_r = dvp_entry.get("opp_reb_rank", 15)
+        return int(pts_r * 0.60 + reb_r * 0.40)
+    elif "pts + ast" in stat_lower:
+        pts_r = dvp_entry.get("opp_pts_rank", 15)
+        ast_r = dvp_entry.get("opp_ast_rank", 15)
+        return int(pts_r * 0.55 + ast_r * 0.45)
+    elif "rebs + asts" in stat_lower or "reb + ast" in stat_lower:
+        reb_r = dvp_entry.get("opp_reb_rank", 15)
+        ast_r = dvp_entry.get("opp_ast_rank", 15)
+        return int(reb_r * 0.50 + ast_r * 0.50)
+    elif "3-pointer" in stat_lower or "3pm" in stat_lower:
+        return dvp_entry.get("opp_fg3m_rank")
+    elif "point" in stat_lower or "pts" in stat_lower:
+        return dvp_entry.get("opp_pts_rank")
+    elif "rebound" in stat_lower or "reb" in stat_lower:
+        return dvp_entry.get("opp_reb_rank")
+    elif "assist" in stat_lower or "ast" in stat_lower:
+        return dvp_entry.get("opp_ast_rank")
+
+    return None
 
 
 def _recency_weighted_trimmed_avg(game_log: list, stat_key: str) -> float | None:
@@ -479,19 +489,22 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   game_log: list = None,
                                   usage_vacuum_modifier: float = 1.0,
                                   opp_stat_rank: int = None,
-                                  position: str = "") -> tuple:
+                                  position: str = "",
+                                  dvp_rank: int = None) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score,
              recommended_direction, ha_modifier, min_modifier, role_change_dampener)
 
-    Formula v7:
+    Formula v8:
     - Recency-weighted trimmed mean (outlier-resistant averages)
     - Edge 40%, Matchup 25%, Odds 15%, Efficiency 10%, HitRate 10%
     - Hit rate reduced from 20%→10% (too correlated with edge on small samples)
     - Role change edge dampener (stale Under signals when books adjust for injuries)
     - Direction-aware modifiers (minutes, lineup, usage vacuum)
     - Extreme matchup boost: Edge→35%, Matchup→30%
+    - Real Defense vs Position (DvP): replaces static affinity with actual
+      position-filtered opponent ranks from the NBA API
     """
     stat = prop.get("stat_name", "")
     line = float(prop.get("line", 0))
@@ -563,19 +576,15 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     relevant_odds = under_odds_val if recommended_direction == "Under" else over_odds_val
     odds_score = _odds_tier_score(relevant_odds)
 
-    # 6. Matchup Score (stat-specific when available)
-    matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction, opp_stat_rank=opp_stat_rank)
-
-    # 6b. Defense-vs-Position (DvP) affinity adjustment
-    # Scale the matchup signal based on how much this position exploits the weakness.
-    # E.g., a Center benefits more from poor rebounding D than a Guard does.
-    dvp_factor = _dvp_affinity(position, stat_key)
-    if dvp_factor != 1.0 and matchup_score != 5.0:
-        matchup_score = max(0.0, min(10.0, 5.0 + (matchup_score - 5.0) * dvp_factor))
+    # 6. Matchup Score — prefer real DvP rank (position-filtered), fall back to team-wide
+    # dvp_rank = opponent's stat-specific rank filtered by player position (from NBA API)
+    # opp_stat_rank = opponent's stat-specific rank (team-wide, no position filter)
+    matchup_stat_rank = dvp_rank if dvp_rank is not None else opp_stat_rank
+    matchup_score = calculate_matchup_score(opp_def_rank, opp_pace_rank, recommended_direction, opp_stat_rank=matchup_stat_rank)
 
     # Boost matchup weight if extreme outlier (redistribute from edge to keep sum = 1.0)
-    # Use stat-specific rank for boost check when available
-    effective_def_rank = opp_stat_rank if opp_stat_rank is not None else opp_def_rank
+    # Use DvP rank first, then team-wide stat rank, then generic def rank
+    effective_def_rank = dvp_rank if dvp_rank is not None else (opp_stat_rank if opp_stat_rank is not None else opp_def_rank)
     matchup_weight = 0.25
     edge_weight = 0.40
     if (effective_def_rank and effective_def_rank >= 28 and recommended_direction == "Over") or \
@@ -843,7 +852,8 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
                             opp_pace_rank: int = None,
                             player_advanced: dict = None,
                             opp_stat_ranks: dict = None,
-                            position: str = "") -> tuple:
+                            position: str = "",
+                            dvp_entry: dict = None) -> tuple:
     """
     Calculate ranking score for a player (finds best prop score).
     Returns (total_score, component_scores)
@@ -867,6 +877,9 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
         # Resolve stat-specific opponent rank (now passed through from caller)
         opp_stat_rank = _resolve_opponent_stat_rank(stat_name, opp_stat_ranks) if opp_stat_ranks else None
 
+        # Resolve DvP rank (position-filtered opponent rank)
+        dvp_rank = _resolve_dvp_stat_rank(stat_name, dvp_entry) if dvp_entry else None
+
         score, edge, player_avg, urgency, recommended_direction, _, _, _ = calculate_prop_ranking_score(
             prop, averages, game_time_utc,
             lineup_status=lineup_status,
@@ -879,7 +892,8 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
             opp_pace_rank=opp_pace_rank,
             player_advanced=player_advanced,
             opp_stat_rank=opp_stat_rank,
-            position=position
+            position=position,
+            dvp_rank=dvp_rank
         )
         if score > best_score:
             best_score = score
@@ -1674,6 +1688,11 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
     opponent_stats_cache = get_all_team_opponent_stats()
     print(f"✓ Cached opponent stats for {len(opponent_stats_cache)} teams")
 
+    # 3c. Fetch Defense vs Position (DvP) stats — position-filtered opponent ranks
+    print("📊 Fetching Defense vs Position (DvP) stats...")
+    dvp_cache = get_dvp_stats()
+    print(f"✓ Cached DvP stats: {len(dvp_cache)} entries")
+
     # 4. Fetch player advanced stats (single API call for all ~500 players)
     print("📊 Fetching player advanced stats...")
     player_advanced_cache = get_all_player_advanced_stats()
@@ -1858,6 +1877,8 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
         # Calculate ranking score with full context
         rank_opp_stat_ranks = opponent_stats_cache.get(rank_opponent_abbr, {})
         rank_position = nba_stats.get("position", "") if nba_stats else ""
+        rank_dvp_group = _position_to_dvp_group(rank_position)
+        rank_dvp_entry = dvp_cache.get((rank_opponent_abbr, rank_dvp_group), {})
         ranking_score, score_components = calculate_ranking_score(
             {"averages": averages},
             ep["underdog_props"],
@@ -1871,7 +1892,8 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
             opp_pace_rank=rank_opp_def_stats.get("pace_rank"),
             player_advanced=rank_player_adv,
             opp_stat_ranks=rank_opp_stat_ranks,
-            position=rank_position
+            position=rank_position,
+            dvp_entry=rank_dvp_entry
         )
         ep["ranking_score"] = ranking_score
         ep["score_components"] = score_components
@@ -2023,7 +2045,12 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
             opp_opp_stats = opponent_stats_cache.get(opponent_abbr, {})
             opp_stat_rank = _resolve_opponent_stat_rank(stat_name, opp_opp_stats)
 
-            # Calculate ranking score with all context (v6)
+            # Resolve DvP rank (position-filtered opponent rank)
+            dvp_group = _position_to_dvp_group(position)
+            dvp_entry = dvp_cache.get((opponent_abbr, dvp_group), {})
+            dvp_rank = _resolve_dvp_stat_rank(stat_name, dvp_entry)
+
+            # Calculate ranking score with all context (v8 — real DvP)
             prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier, role_change_dampener = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
@@ -2036,15 +2063,17 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 game_log=game_log,
                 usage_vacuum_modifier=ep.get("usage_vacuum", 1.0),
                 opp_stat_rank=opp_stat_rank,
-                position=position
+                position=position,
+                dvp_rank=dvp_rank
             )
 
-            # Calculate matchup score for prop card (informational)
+            # Calculate matchup score for prop card (informational) — use DvP rank
+            matchup_stat_rank = dvp_rank if dvp_rank is not None else opp_stat_rank
             matchup_score = calculate_matchup_score(
                 opp_def_stats.get("def_rank"),
                 opp_def_stats.get("pace_rank"),
                 recommended_direction,
-                opp_stat_rank=opp_stat_rank
+                opp_stat_rank=matchup_stat_rank
             )
 
             # Calculate efficiency score for prop card (informational)
@@ -2113,6 +2142,9 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 "oppDefRank": opp_def_stats.get("def_rank"),
                 "oppPaceRank": opp_def_stats.get("pace_rank"),
                 "oppStatRank": opp_stat_rank,
+                # Defense vs Position (DvP) — position-filtered opponent rank
+                "dvpRank": dvp_rank,
+                "dvpGroup": dvp_group,  # "G", "F", or "C"
                 # Efficiency data (player advanced stats)
                 "efficiencyScore": eff_score,
                 "playerAdvanced": {

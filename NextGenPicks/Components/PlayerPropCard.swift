@@ -592,6 +592,7 @@ struct RankingBreakdownSheet: View {
 
                         edgeRow
                         matchupRow
+                        dvpRow
                         hitRateRow
                         efficiencyRow
                         oddsRow
@@ -680,7 +681,7 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v7)")
+            Text("Formula (v8)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
@@ -688,7 +689,7 @@ struct RankingBreakdownSheet: View {
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Averages: Recency-weighted trimmed mean | DvP-adjusted matchup")
+            Text("Averages: Recency-weighted trimmed mean | Real DvP matchup (position-filtered)")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
@@ -752,6 +753,117 @@ struct RankingBreakdownSheet: View {
             parts.insert("vs \(opp)", at: 0)
         }
         return parts.isEmpty ? "Default (neutral)" : parts.joined(separator: " | ")
+    }
+
+    // MARK: - DvP Row
+
+    private var dvpRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let dvpRank = player.dvpRank {
+                let dvpScore = dvpScoreValue(rank: dvpRank)
+                HStack {
+                    Image(systemName: "person.fill.viewfinder")
+                        .font(.caption)
+                        .foregroundStyle(Color(hex: "06b6d4"))
+                        .frame(width: 16)
+                    Text("Def vs Position")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                    Text("DvP")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondaryText)
+                    Spacer()
+                    Text("#\(dvpRank)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(dvpColor(rank: dvpRank))
+                    Text("/ 30")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondaryText)
+                }
+
+                // Score bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(hex: "06b6d4").opacity(0.15))
+                            .frame(height: 6)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(dvpColor(rank: dvpRank))
+                            .frame(width: geo.size.width * min(1.0, dvpScore / 10.0), height: 6)
+                    }
+                }
+                .frame(height: 6)
+
+                // Details
+                Text(dvpDetails)
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(player.dvpRank != nil ? 10 : 0)
+        .background(player.dvpRank != nil ? Color.surface : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func dvpScoreValue(rank: Int) -> Double {
+        // Convert rank to a 0-10 score for the bar
+        // Rank 30 (worst D) = 10.0 (best for Over), Rank 1 (best D) = 0.3
+        let direction = player.recommendedDirection ?? "Over"
+        if direction == "Over" {
+            return Double(rank) / 30.0 * 10.0
+        } else {
+            return Double(31 - rank) / 30.0 * 10.0
+        }
+    }
+
+    private func dvpColor(rank: Int) -> Color {
+        let direction = player.recommendedDirection ?? "Over"
+        if direction == "Over" {
+            if rank >= 18 { return .brandEmerald }   // favorable + elite
+            if rank >= 12 { return .brandOrange }    // neutral
+            return .brandRed                         // tough
+        } else {
+            if rank <= 12 { return .brandEmerald }   // favorable + elite
+            if rank <= 18 { return .brandOrange }    // neutral
+            return .brandRed                         // tough
+        }
+    }
+
+    private var dvpDetails: String {
+        guard let dvpRank = player.dvpRank else { return "No DvP data" }
+        let posLabel: String
+        switch player.dvpGroup {
+        case "G": posLabel = "Guards"
+        case "C": posLabel = "Centers"
+        default: posLabel = "Forwards"
+        }
+        let direction = player.recommendedDirection ?? "Over"
+        let opp = player.opponentAbbr ?? "OPP"
+
+        if direction == "Over" {
+            if dvpRank >= 25 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — elite matchup for Over"
+            } else if dvpRank >= 18 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — favorable for Over"
+            } else if dvpRank >= 12 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — neutral matchup"
+            } else {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — tough matchup for Over"
+            }
+        } else {
+            if dvpRank <= 5 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — elite matchup for Under"
+            } else if dvpRank <= 12 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — favorable for Under"
+            } else if dvpRank <= 18 {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — neutral matchup"
+            } else {
+                return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — tough matchup for Under"
+            }
+        }
     }
 
     private var hitRateRow: some View {

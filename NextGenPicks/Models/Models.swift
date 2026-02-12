@@ -328,6 +328,10 @@ struct PlayerCardData: Identifiable, Codable {
     var usageVacuum: Double?
     var roleChangeDampener: Double?
 
+    // v8 Defense vs Position (DvP) fields
+    var dvpRank: Int?       // Position-filtered opponent rank (1=best D, 30=worst)
+    var dvpGroup: String?   // "G", "F", or "C"
+
     // Computed property: get the main prop (either from single prop fields or first of array)
     var mainProp: PlayerProp? {
         // If we have single prop fields, create a PlayerProp from them
@@ -361,7 +365,8 @@ struct PlayerCardData: Identifiable, Codable {
          matchupScore: Double? = nil, oppDefRank: Int? = nil, oppPaceRank: Int? = nil,
          efficiencyScore: Double? = nil, playerAdvanced: PlayerAdvanced? = nil,
          restStatus: String? = nil, teamInjuries: String? = nil, oppInjuries: String? = nil, opponentAbbr: String? = nil,
-         isHome: Bool? = nil, homeAwayModifier: Double? = nil, minutesConfidence: Double? = nil, avgMinutes: Double? = nil, usageVacuum: Double? = nil, roleChangeDampener: Double? = nil) {
+         isHome: Bool? = nil, homeAwayModifier: Double? = nil, minutesConfidence: Double? = nil, avgMinutes: Double? = nil, usageVacuum: Double? = nil, roleChangeDampener: Double? = nil,
+         dvpRank: Int? = nil, dvpGroup: String? = nil) {
         // Accept Int or String for id
         if let intId = id as? Int {
             self.id = String(intId)
@@ -416,6 +421,8 @@ struct PlayerCardData: Identifiable, Codable {
         self.avgMinutes = avgMinutes
         self.usageVacuum = usageVacuum
         self.roleChangeDampener = roleChangeDampener
+        self.dvpRank = dvpRank
+        self.dvpGroup = dvpGroup
     }
 
     // Custom decoder to handle id being either Int or String in Firebase
@@ -550,5 +557,9 @@ struct PlayerCardData: Identifiable, Codable {
         if let d = try? container.decodeIfPresent(Double.self, forKey: .roleChangeDampener) { self.roleChangeDampener = d }
         else if let i = try? container.decodeIfPresent(Int.self, forKey: .roleChangeDampener) { self.roleChangeDampener = Double(i) }
         else { self.roleChangeDampener = nil }
+
+        // v8 DvP fields
+        self.dvpRank = try container.decodeIfPresent(Int.self, forKey: .dvpRank)
+        self.dvpGroup = try container.decodeIfPresent(String.self, forKey: .dvpGroup)
     }
 }
