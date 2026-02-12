@@ -486,7 +486,10 @@ struct RankingBreakdownSheet: View {
     // Recompute component scores from stored data to show the math
     private var edgeScore: Double {
         guard let edge = player.edge, let line = player.mainProp?.line, line > 0 else { return 0 }
-        return min(10.0, (abs(edge) / line) * 40.0)
+        // Blended: 70% percentage-based + 30% absolute (matches backend v6)
+        let pctEdgeScore = min(10.0, (abs(edge) / line) * 40.0)
+        let absEdgeScore = min(10.0, abs(edge) * 2.0)
+        return (pctEdgeScore * 0.70) + (absEdgeScore * 0.30)
     }
 
     private var hitRateScore: Double {
@@ -552,6 +555,22 @@ struct RankingBreakdownSheet: View {
         return String(format: "%.2fx (%@ - Missing teammates)", mod, directionLabel)
     }
 
+    private var lineMagnitudeModifier: String? {
+        guard let line = player.mainProp?.line else { return nil }
+        if line < 2.0 {
+            return "0.88x (Low line — high volatility)"
+        } else if line < 4.0 {
+            return "0.94x (Small stat — moderate volatility)"
+        }
+        return nil
+    }
+
+    private var roleChangeDampenerModifier: String? {
+        guard let dampener = player.roleChangeDampener, dampener < 1.0 else { return nil }
+        let pct = Int(round((1.0 - dampener) * 100))
+        return "\(pct)% edge dampened (injury-adjusted line)"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -580,7 +599,7 @@ struct RankingBreakdownSheet: View {
                     }
 
                     // Modifiers
-                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil {
+                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil || lineMagnitudeModifier != nil || roleChangeDampenerModifier != nil {
                         Divider().background(Color.border)
                         modifiersSection
                     }
@@ -661,15 +680,19 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v6)")
+            Text("Formula (v7)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
-            Text("(Edge x 0.35) + (Matchup x 0.20-25) + (Hit Rate x 0.20) + (Efficiency x 0.10) + (Odds x 0.15)")
+            Text("(Edge x 0.40) + (Matchup x 0.25-30) + (Odds x 0.15) + (Eff x 0.10) + (Hit Rate x 0.10)")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Directional Modifiers: Lineup, Trend, Venue, Volume, Usage Vacuum")
+            Text("Averages: Recency-weighted trimmed mean | DvP-adjusted matchup")
+                .font(.caption2)
+                .foregroundStyle(Color.secondaryText.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Modifiers: Lineup, Trend, Venue, Volume, Usage Vacuum, Line Size, Role Change")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
@@ -686,7 +709,7 @@ struct RankingBreakdownSheet: View {
         ComponentRow(
             icon: "arrow.up.arrow.down",
             label: "Edge",
-            weight: "35%",
+            weight: "40%",
             score: edgeScore,
             color: .brandEmerald,
             details: edgeDetails
@@ -698,14 +721,19 @@ struct RankingBreakdownSheet: View {
         let edge = player.edge ?? (avg - line)
         let pct = (abs(edge) / (line > 0 ? line : 1)) * 100
         let dir = edge >= 0 ? "above" : "below"
-        return "Avg \(String(format: "%.1f", avg)) is \(String(format: "%.1f%%", pct)) \(dir) the line (\(String(format: "%.1f", line)))"
+        var detail = "Avg \(String(format: "%.1f", avg)) is \(String(format: "%.1f%%", pct)) \(dir) line \(String(format: "%.1f", line)) | Edge: \(String(format: "%.1f", abs(edge))) pts"
+        if let dampener = player.roleChangeDampener, dampener < 1.0 {
+            let dampenedPct = Int(round((1.0 - dampener) * 100))
+            detail += " | Dampened \(dampenedPct)% (line adjusted for injuries)"
+        }
+        return detail
     }
 
     private var matchupRow: some View {
         ComponentRow(
             icon: "shield.lefthalf.filled",
             label: "Matchup",
-            weight: "20-25%",
+            weight: "25-30%",
             score: player.matchupScore ?? 5.0,
             color: .brandBlue,
             details: matchupDetails
@@ -730,7 +758,7 @@ struct RankingBreakdownSheet: View {
         ComponentRow(
             icon: "target",
             label: "Hit Rate",
-            weight: "20%",
+            weight: "10%",
             score: hitRateScore,
             color: .brandOrange,
             details: hitRateDetails
@@ -892,6 +920,28 @@ struct RankingBreakdownSheet: View {
                         .font(.caption)
                         .foregroundStyle(Color.brandEmerald)
                     Text("Teammates: \(uv)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let lm = lineMagnitudeModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.line.downtrend.xyaxis")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandOrange)
+                    Text("Line Size: \(lm)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let rc = roleChangeDampenerModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandOrange)
+                    Text("Role Change: \(rc)")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                 }

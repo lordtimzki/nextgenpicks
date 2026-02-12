@@ -239,7 +239,6 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
     # Build team_id to abbreviation map from games
     team_id_to_abbr = {}
     for game in espn_games:
-        # This is from ESPN, not Underdog, so skip
         pass
 
     # Build from Underdog games in the data
@@ -308,7 +307,8 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
 
         # Prioritize main stats first
         priority_stats = ["Points", "Rebounds", "Assists",
-                          "3-Pointers Made", "Pts + Rebs + Asts"]
+                          "3-Pointers Made", "Pts + Rebs + Asts",
+                          "Pts + Rebs", "Pts + Asts", "Rebs + Asts"]
 
         # Sort props by priority
         def prop_priority(p):
@@ -327,13 +327,16 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
                 continue
             seen_stats.add(stat_name)
 
-            # Shorten stat names
+            # Shorten stat names (check multi-stat combos before singles)
             short_name = stat_name
+            short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
+            short_name = short_name.replace("Pts + Rebs", "Pts+Reb")
+            short_name = short_name.replace("Pts + Asts", "Pts+Ast")
+            short_name = short_name.replace("Rebs + Asts", "Reb+Ast")
             short_name = short_name.replace("Points", "Pts")
             short_name = short_name.replace("Rebounds", "Reb")
             short_name = short_name.replace("Assists", "Ast")
             short_name = short_name.replace("3-Pointers Made", "3PM")
-            short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
             short_name = short_name.replace("Fantasy Points", "FPTS")
 
             # Convert american odds to integer

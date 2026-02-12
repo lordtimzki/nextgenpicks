@@ -136,7 +136,7 @@ struct FeedView: View {
                 await vm.loadInitialData()
             }
         }
-        .fullscreenCover(isPresented: $showSearch) {
+        .fullScreenCover(isPresented: $showSearch) {
             SearchView()
                 .environmentObject(vm)
         }
