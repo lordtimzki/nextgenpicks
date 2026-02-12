@@ -2277,7 +2277,7 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     Fetch NBA player props from Underdog Fantasy and rank with data-driven scoring.
     Uses ESPN for schedule data and nba_api for player stats enrichment.
     """
-    result = _run_analysis_pipeline(source="batch_analyze", max_enrich=0)
+    result = _run_analysis_pipeline(source="batch_analyze", max_enrich=80)
 
     if result is None:
         return https_fn.Response(json.dumps({
@@ -2312,4 +2312,4 @@ def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     Automatically refresh all player props hourly.
     Enriches all players (no cap) with NBA stats.
     """
-    _run_analysis_pipeline(source="scheduled_refresh", max_enrich=0)
+    _run_analysis_pipeline(source="scheduled_refresh", max_enrich=80)

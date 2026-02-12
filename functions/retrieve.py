@@ -1,6 +1,6 @@
 import time
 from nba_api.stats.static import players, teams
-from nba_api.stats.endpoints import playergamelog, leaguedashteamstats, leaguedashplayerstats, leaguedashplayerbiostats
+from nba_api.stats.endpoints import playergamelog, leaguedashteamstats, leaguedashplayerstats, leaguedashplayerbiostats, playerindex
 
 # Get player data using nba api
 async def get_player_data(player_name):
@@ -160,45 +160,74 @@ def get_all_team_defense_stats() -> dict:
         return {}
 
 
+# Map compact position codes (from PlayerIndex) to full names for display/DvP
+_POSITION_MAP = {
+    "G": "Guard", "G-F": "Guard", "F-G": "Guard",
+    "F": "Forward", "F-C": "Forward-Center", "C-F": "Forward-Center",
+    "C": "Center",
+}
+
+
 # Bulk fetch player bio stats (single API call for position/team info)
 def get_all_player_bio_stats() -> dict:
     """
     Fetch basic bio stats (Team, Position) for all players.
+    Uses LeagueDashPlayerBioStats for team/stats + PlayerIndex for position.
     Returns dict keyed by PLAYER_ID.
     """
     print("DEBUG: Fetching player bio stats (Position, Team) for all players...")
+
+    bio_stats = {}
+
+    # 1. Fetch team and advanced bio data
     try:
         time.sleep(0.5)
-        # LeagueDashPlayerBioStats usually contains position info?
-        # Note: If it doesn't, we might need a fallback or different endpoint.
-        # But commonly used for height/weight/etc.
-        # Let's verify fields if possible, but assuming it works per investigator.
         stats = leaguedashplayerbiostats.LeagueDashPlayerBioStats(
             season='2025-26'
         )
         df = stats.get_data_frames()[0]
-        
-        bio_stats = {}
-        # Columns often: PLAYER_ID, PLAYER_NAME, TEAM_ABBREVIATION, AGE, PLAYER_HEIGHT, PLAYER_WEIGHT, COLLEGE, COUNTRY, DRAFT_YEAR, DRAFT_ROUND, DRAFT_NUMBER, GP, PTS, REB, AST, NET_RATING, OREB_PCT, DREB_PCT, USG_PCT, TS_PCT, AST_PCT
-        # Wait, usually it doesn't have POSITION explicitly in some versions.
-        # But let's check for it. If not present, we will rely on commonplayerinfo fallback in main script.
-        # Actually, let's just grab what we can: Team Abbr is critical.
-        
-        has_pos = 'POSITION' in df.columns
-        
+
         for _, row in df.iterrows():
             player_id = int(row['PLAYER_ID'])
             bio_stats[player_id] = {
                 "team_abbr": str(row['TEAM_ABBREVIATION']),
-                "position": str(row['POSITION']) if has_pos else "N/A",
+                "position": "N/A",
                 "name": str(row['PLAYER_NAME'])
             }
-            
+
         print(f"DEBUG: Fetched bio stats for {len(bio_stats)} players")
-        return bio_stats
     except Exception as e:
         print(f"ERROR fetching player bio stats: {e}")
-        return {}
+
+    # 2. Fetch position data from PlayerIndex (has POSITION column)
+    try:
+        time.sleep(0.5)
+        idx = playerindex.PlayerIndex(season='2025-26')
+        idx_df = idx.get_data_frames()[0]
+
+        pos_count = 0
+        for _, row in idx_df.iterrows():
+            player_id = int(row['PERSON_ID'])
+            raw_pos = str(row.get('POSITION', ''))
+            position = _POSITION_MAP.get(raw_pos, raw_pos) if raw_pos else "N/A"
+
+            if player_id in bio_stats:
+                bio_stats[player_id]["position"] = position
+            else:
+                # Player in index but not in bio stats — add with position + team
+                bio_stats[player_id] = {
+                    "team_abbr": str(row.get('TEAM_ABBREVIATION', '')),
+                    "position": position,
+                    "name": f"{row.get('PLAYER_FIRST_NAME', '')} {row.get('PLAYER_LAST_NAME', '')}".strip()
+                }
+            if position != "N/A":
+                pos_count += 1
+
+        print(f"DEBUG: Merged position data for {pos_count} players from PlayerIndex")
+    except Exception as e:
+        print(f"ERROR fetching PlayerIndex for positions: {e}")
+
+    return bio_stats
 
 
 # Bulk fetch player advanced stats (single API call for all ~500 players)
