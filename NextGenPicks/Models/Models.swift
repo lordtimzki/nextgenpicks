@@ -333,6 +333,13 @@ struct PlayerCardData: Identifiable, Codable {
     var dvpRank: Int?       // Position-filtered opponent rank (1=best D, 30=worst)
     var dvpGroup: String?   // "G", "F", or "C"
 
+    // v10 Head-to-Head & Pace fields
+    var h2hModifier: Double?
+    var h2hAvg: Double?
+    var h2hGames: Int?
+    var paceModifier: Double?
+    var expectedPace: Double?
+
     // Computed property: get the main prop (either from single prop fields or first of array)
     var mainProp: PlayerProp? {
         // If we have single prop fields, create a PlayerProp from them
@@ -367,7 +374,9 @@ struct PlayerCardData: Identifiable, Codable {
          efficiencyScore: Double? = nil, playerAdvanced: PlayerAdvanced? = nil,
          restStatus: String? = nil, teamInjuries: String? = nil, oppInjuries: String? = nil, opponentAbbr: String? = nil,
          isHome: Bool? = nil, homeAwayModifier: Double? = nil, minutesConfidence: Double? = nil, avgMinutes: Double? = nil, usageVacuum: Double? = nil, roleChangeDampener: Double? = nil, lineDivergenceDampener: Double? = nil,
-         dvpRank: Int? = nil, dvpGroup: String? = nil) {
+         dvpRank: Int? = nil, dvpGroup: String? = nil,
+         h2hModifier: Double? = nil, h2hAvg: Double? = nil, h2hGames: Int? = nil,
+         paceModifier: Double? = nil, expectedPace: Double? = nil) {
         // Accept Int or String for id
         if let intId = id as? Int {
             self.id = String(intId)
@@ -425,6 +434,11 @@ struct PlayerCardData: Identifiable, Codable {
         self.lineDivergenceDampener = lineDivergenceDampener
         self.dvpRank = dvpRank
         self.dvpGroup = dvpGroup
+        self.h2hModifier = h2hModifier
+        self.h2hAvg = h2hAvg
+        self.h2hGames = h2hGames
+        self.paceModifier = paceModifier
+        self.expectedPace = expectedPace
     }
 
     // Custom decoder to handle id being either Int or String in Firebase
@@ -567,5 +581,24 @@ struct PlayerCardData: Identifiable, Codable {
         // v8 DvP fields
         self.dvpRank = try container.decodeIfPresent(Int.self, forKey: .dvpRank)
         self.dvpGroup = try container.decodeIfPresent(String.self, forKey: .dvpGroup)
+
+        // v10 Head-to-Head & Pace fields
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .h2hModifier) { self.h2hModifier = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .h2hModifier) { self.h2hModifier = Double(i) }
+        else { self.h2hModifier = nil }
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .h2hAvg) { self.h2hAvg = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .h2hAvg) { self.h2hAvg = Double(i) }
+        else { self.h2hAvg = nil }
+
+        self.h2hGames = try container.decodeIfPresent(Int.self, forKey: .h2hGames)
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .paceModifier) { self.paceModifier = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .paceModifier) { self.paceModifier = Double(i) }
+        else { self.paceModifier = nil }
+
+        if let d = try? container.decodeIfPresent(Double.self, forKey: .expectedPace) { self.expectedPace = d }
+        else if let i = try? container.decodeIfPresent(Int.self, forKey: .expectedPace) { self.expectedPace = Double(i) }
+        else { self.expectedPace = nil }
     }
 }
