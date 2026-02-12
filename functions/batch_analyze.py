@@ -452,6 +452,8 @@ def _recency_weighted_trimmed_avg(game_log: list, stat_key: str) -> float | None
     - Uses all available games (up to 10)
     - Drops the single highest and lowest values (trimmed)
     - Weights remaining games by recency: most recent = 1.0, oldest = 0.5
+    - Discounts blowout games (plus_minus >= 20 or <= -20) by 50% weight
+      because stats in blowouts are often inflated/deflated by garbage time
     Returns None if fewer than 4 games (trimming needs margin).
     """
     if not game_log or len(game_log) < 4:
@@ -472,7 +474,14 @@ def _recency_weighted_trimmed_avg(game_log: list, stat_key: str) -> float | None
     total_weighted = 0.0
     total_weight = 0.0
     for orig_idx, val in trimmed:
-        weight = 1.0 - (orig_idx / max(1, n - 1)) * 0.5  # 1.0 → 0.5
+        recency_weight = 1.0 - (orig_idx / max(1, n - 1)) * 0.5  # 1.0 → 0.5
+
+        # Blowout discount: games with |plus_minus| >= 20 are likely affected
+        # by garbage time — discount their weight by 50%
+        plus_minus = game_log[orig_idx].get("plus_minus", 0)
+        blowout_factor = 0.5 if abs(plus_minus) >= 20 else 1.0
+
+        weight = recency_weight * blowout_factor
         total_weighted += val * weight
         total_weight += weight
 
@@ -1388,6 +1397,7 @@ def get_player_stats_quick(player_name: str, bio_cache: dict = None) -> dict | N
                         "ast": g['AST'],
                         "fg3m": g['FG3M'],
                         "min": round(minutes, 1),
+                        "plus_minus": g.get('PLUS_MINUS', 0),
                         "matchup": g['MATCHUP'],
                         "date": g['GAME_DATE']
                     })
@@ -1529,7 +1539,13 @@ def _resolve_opponent_stat_rank(stat_name: str, opp_stats: dict) -> int | None:
 def calculate_consistency_modifier(game_log: list, stat_name: str, recommended_direction: str) -> tuple:
     """
     Calculate consistency modifier based on coefficient of variation.
-    Consistent players get a boost for Over, volatile players get a boost for Under.
+    Uses a continuous curve instead of step tiers for smoother scoring.
+
+    Consistent players (low CV) → boost Over, penalize Under
+    Volatile players (high CV)  → penalize Over, boost Under
+
+    Curve: CV 0.10 → ±0.08, CV 0.275 → 0.0 (neutral), CV 0.50 → ±0.08
+    Max modifier swing: ±8% (range [0.92, 1.08]).
     Returns (modifier, cv_value). Requires >= 4 games, else (1.0, 0.0).
     """
     if not game_log or len(game_log) < 4:
@@ -1548,14 +1564,28 @@ def calculate_consistency_modifier(game_log: list, stat_name: str, recommended_d
     std_dev = variance ** 0.5
     cv = std_dev / mean
 
-    if cv < 0.20:
-        # Consistent player
-        modifier = 1.06 if recommended_direction == "Over" else 0.94
-    elif cv > 0.35:
-        # Volatile player
-        modifier = 0.94 if recommended_direction == "Over" else 1.06
+    # Continuous curve: midpoint at CV = 0.275 (neutral)
+    # CV < 0.275 → consistent (positive for Over, negative for Under)
+    # CV > 0.275 → volatile (negative for Over, positive for Under)
+    # Max effect at CV ≤ 0.10 or CV ≥ 0.50, capped at ±0.08
+    midpoint = 0.275
+    max_effect = 0.08  # ±8% max swing
+    half_range = 0.175  # distance from midpoint to max effect
+
+    deviation = midpoint - cv  # positive = consistent, negative = volatile
+    # Normalize to [-1, 1] range and clamp
+    normalized = max(-1.0, min(1.0, deviation / half_range))
+    # Raw effect: positive means "consistent boost"
+    raw_effect = normalized * max_effect
+
+    # Apply direction: consistent helps Over, volatile helps Under
+    if recommended_direction == "Over":
+        modifier = 1.0 + raw_effect  # consistent → boost, volatile → penalty
     else:
-        modifier = 1.0
+        modifier = 1.0 - raw_effect  # consistent → penalty, volatile → boost
+
+    # Clamp to safety range
+    modifier = max(0.92, min(1.08, modifier))
 
     return modifier, round(cv, 3)
 
@@ -2293,28 +2323,39 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
 
     print(f"📊 Created {len(all_prop_cards)} individual prop cards")
 
-    # 10. Sort and categorize props
+    # 10. Sort and categorize props (with player deduplication)
     all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
 
-    # "forYou" section: top 5 best-ranked props for 5-leg parlay builders
-    for_you_count = min(5, len(all_prop_cards))
-    for i, card in enumerate(all_prop_cards[:for_you_count]):
-        card["section"] = "forYou"
-        card["featured"] = True
+    # --- Player Deduplication for forYou & topPicks ---
+    # For parlay builders: each player should appear at most once in the
+    # featured sections.  Pick each player's best-scored prop, skip the rest
+    # into allProps.  This prevents "LeBron Pts, LeBron PRA, LeBron Pts+Reb"
+    # filling the entire forYou section.
+    seen_players_for_you = set()
+    seen_players_top = set()
+    for_you_cards = []
+    top_picks_cards = []
+    remaining_cards = []
 
-    # "topPicks" section: props 6-20 (next best after forYou)
-    top_picks_start = for_you_count
-    top_picks_end = min(20, len(all_prop_cards))
-    top_picks_count = top_picks_end - top_picks_start
+    for card in all_prop_cards:
+        pid = card.get("player_id", card.get("name", ""))
+        if len(for_you_cards) < 5 and pid not in seen_players_for_you:
+            card["section"] = "forYou"
+            card["featured"] = True
+            for_you_cards.append(card)
+            seen_players_for_you.add(pid)
+        elif len(top_picks_cards) < 15 and pid not in seen_players_top:
+            card["section"] = "topPicks"
+            card["featured"] = True
+            top_picks_cards.append(card)
+            seen_players_top.add(pid)
+        else:
+            card["section"] = "allProps"
+            card["featured"] = False
+            remaining_cards.append(card)
 
-    for card in all_prop_cards[top_picks_start:top_picks_end]:
-        card["section"] = "topPicks"
-        card["featured"] = True
-
-    # Mark remaining cards as allProps
-    for card in all_prop_cards[top_picks_end:]:
-        card["section"] = "allProps"
-        card["featured"] = False
+    for_you_count = len(for_you_cards)
+    top_picks_count = len(top_picks_cards)
 
     # Count trending badges
     hot_count = sum(1 for c in all_prop_cards if c["trending"] == "hot")
