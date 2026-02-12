@@ -494,13 +494,17 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score,
-             recommended_direction, ha_modifier, min_modifier, role_change_dampener)
+             recommended_direction, ha_modifier, min_modifier, role_change_dampener,
+             line_divergence_dampener)
 
-    Formula v8:
+    Formula v9:
     - Recency-weighted trimmed mean (outlier-resistant averages)
     - Edge 40%, Matchup 25%, Odds 15%, Efficiency 10%, HitRate 10%
     - Hit rate reduced from 20%→10% (too correlated with edge on small samples)
     - Role change edge dampener (stale Under signals when books adjust for injuries)
+    - Line divergence skepticism: dampen Under when line >> avg (books pricing in expanded role)
+    - Minutes Under boost capped to prevent rewarding bench players for being bench players
+    - Low-minutes CV adjustment: high-CV Under boost dampened for role players
     - Direction-aware modifiers (minutes, lineup, usage vacuum)
     - Extreme matchup boost: Edge→35%, Matchup→30%
     - Real Defense vs Position (DvP): replaces static affinity with actual
@@ -532,7 +536,7 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
 
     # Early exit: OUT players get score 0
     if lineup_status == "OUT":
-        return 0.0, 0.0, round(player_avg, 1), 0.0, None, 1.0, 1.0, 1.0
+        return 0.0, 0.0, round(player_avg, 1), 0.0, None, 1.0, 1.0, 1.0, 1.0
 
     # 1. Edge Score - Blended (Percentage + Absolute)
     # Percentage edge catches scale-invariant value, absolute edge prevents
@@ -607,6 +611,22 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
             # Pull hit_rate_score toward neutral (5.0) — same staleness problem
             hit_rate_score = 5.0 + (hit_rate_score - 5.0) * role_change_dampener
 
+    # --- Line Divergence Skepticism (independent of usage vacuum) ---
+    # When the line is set FAR above the player's average, the books are pricing
+    # in an expanded role (injuries, rotation changes, etc.) that the averages
+    # don't reflect yet.  Even without usage vacuum triggering, a 40%+ divergence
+    # means the Under edge is unreliable — dampen the score.
+    # This catches cases like bench players whose line is set for starter minutes.
+    line_divergence_dampener = 1.0
+    if recommended_direction == "Under" and player_avg > 0 and line > player_avg:
+        line_above_avg_pct = (line - player_avg) / player_avg
+        if line_above_avg_pct >= 0.30:
+            # 30% = mild dampener, 60%+ = heavy dampener (max 45% reduction)
+            strength = min(1.0, (line_above_avg_pct - 0.30) / 0.40)
+            line_divergence_dampener = max(0.55, 1.0 - strength * 0.45)
+            edge_score *= line_divergence_dampener
+            hit_rate_score = 5.0 + (hit_rate_score - 5.0) * line_divergence_dampener
+
     # Calculate base total score (v7 weights)
     # Base: Edge 40%, Matchup 25%, Odds 15%, Eff 10%, HitRate 10%
     # Extreme matchup: Edge 35%, Matchup 30% (sum stays 1.0)
@@ -631,6 +651,7 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     # Apply trend modifier
     if trend_data:
         trend = trend_data.get("trend", "stable")
+        recent_avg = trend_data.get("recent_avg", 0)
         if trend == "declining":
             decline_pct = trend_data.get("decline_pct", 0)
             penalty = min(0.30, decline_pct / 100.0)
@@ -642,7 +663,22 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
             if recommended_direction == "Over":
                 total = min(10.0, total * 1.05)
             else:
-                total *= 0.95
+                # Surging + Under = risky.  Light penalty normally.
+                # But if recent production is AT or ABOVE the line, the Under
+                # edge is contradicted by the most current data — heavy penalty.
+                # This catches role-change scenarios (injuries, rotation shifts)
+                # where the player's last 2-3 games look nothing like their average.
+                if recent_avg >= line > 0:
+                    # Recent performance is above the line — Under is dubious
+                    overshoot = (recent_avg - line) / line if line > 0 else 0
+                    # 0% overshoot → 0.80x, 20%+ overshoot → 0.60x
+                    surge_penalty = max(0.60, 0.80 - overshoot)
+                    total *= surge_penalty
+                elif recent_avg >= line * 0.85:
+                    # Recent performance within 15% of the line — moderate penalty
+                    total *= 0.85
+                else:
+                    total *= 0.95
 
     # Apply home/away modifier (0.92 - 1.08), direction-aware
     raw_ha_mod = calculate_home_away_modifier(game_log or [], stat, is_home)
@@ -664,8 +700,17 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
         raw_min_mod = raw_min_mod + (1.0 - raw_min_mod) * vacuum_relief * 0.6
     if recommended_direction == "Under":
         # High minutes is BAD for Under (penalty < 1.0)
-        # Low minutes is GOOD for Under (boost > 1.0)
-        min_modifier = max(0.90, min(1.10, 1.0 / raw_min_mod if raw_min_mod > 0.5 else 1.0))
+        # Low minutes is MILDLY good for Under — but cap the boost because the
+        # books already price in the player's minutes.  Don't reward Under just
+        # because someone is a bench player (the line is already set for them).
+        under_min_cap = 1.03  # Much smaller cap than the old 1.10
+        # When the line diverges heavily from the average, the books expect MORE
+        # minutes than usual — kill the Under boost entirely.
+        if player_avg > 0 and line > player_avg:
+            diverge = (line - player_avg) / player_avg
+            if diverge >= 0.30:
+                under_min_cap = 1.0  # No boost when line is 30%+ above avg
+        min_modifier = max(0.90, min(under_min_cap, 1.0 / raw_min_mod if raw_min_mod > 0.5 else 1.0))
     else:
         min_modifier = raw_min_mod
 
@@ -681,7 +726,15 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
             total *= (1.0 / usage_vacuum_modifier)
 
     # Apply Consistency Modifier (CV-based)
-    consistency_mod, _ = calculate_consistency_modifier(game_log or [], stat, recommended_direction)
+    # For low-minutes players (<22 MPG), high CV often reflects role variance
+    # (different minutes per game), not predictable Under performance.  Reduce
+    # the Under boost for volatile low-minute guys.
+    consistency_mod, cv_val = calculate_consistency_modifier(game_log or [], stat, recommended_direction)
+    if recommended_direction == "Under" and consistency_mod > 1.0 and avg_min is not None and avg_min < 22.0:
+        # Scale down the boost: 22 MPG → full boost, 10 MPG → halved
+        minutes_factor = max(0.0, min(1.0, (avg_min - 10.0) / 12.0))
+        adjusted_boost = 1.0 + (consistency_mod - 1.0) * minutes_factor
+        consistency_mod = adjusted_boost
     total *= consistency_mod
 
     # Apply Rest Modifier (days since last game)
@@ -696,7 +749,7 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     # Final clamp
     total = max(0.0, min(10.0, total))
 
-    return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction, round(ha_modifier, 3), round(min_modifier, 3), round(role_change_dampener, 3)
+    return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction, round(ha_modifier, 3), round(min_modifier, 3), round(role_change_dampener, 3), round(line_divergence_dampener, 3)
 
 
 def calculate_matchup_score(opp_def_rank: int = None, opp_pace_rank: int = None,
@@ -801,46 +854,72 @@ def calculate_usage_vacuum_score(team_abbr: str, injuries_cache: dict, team_rost
     """
     Calculate a modifier based on missing teammate usage (Usage Vacuum).
     If high-usage players are OUT, remaining players get a boost.
-    Returns modifier 1.0 - 1.2.
+    Day-To-Day/Questionable players counted at 50% weight.
+    Returns modifier 1.0 - 1.20.
     """
     if not team_abbr or team_abbr not in team_rosters:
         return 1.0
 
-    missing_usage = 0.0
-    roster = team_rosters[team_abbr] # List of {id, usg}
-    
+    roster = team_rosters[team_abbr]  # List of {id, name, usg}
+
     # Get list of injured names/status for this team
     team_injuries = injuries_cache.get(team_abbr, [])
-    # Map injury names to lower for matching
-    injured_map = {i.get("name", "").lower(): i.get("status", "") for i in team_injuries}
+    if not team_injuries:
+        return 1.0
 
-    # We need to match roster IDs to names to check injuries...
-    # Actually `team_rosters` should probably contain names or we need a way to link them.
-    # The `injuries_cache` uses names (e.g. "LeBron James").
-    # `team_rosters` is built from bio_stats which has ID but maybe not full name?
-    # We should ensure `team_rosters` has names.
-    
+    # Build injury lookup: exact name → status, plus last-name-only fallback
+    injured_exact = {}   # full name (lower) → status
+    injured_last = {}    # last name (lower) → (full name, status)
+    for inj in team_injuries:
+        name = inj.get("name", "").strip().lower()
+        status = inj.get("status", "").lower()
+        if name and status:
+            injured_exact[name] = status
+            # Last-name fallback (handles "Gary Payton II" vs "Gary Payton")
+            parts = name.split()
+            if len(parts) >= 2:
+                last = parts[-1]
+                # Skip suffixes like "ii", "iii", "jr", "sr" — use prior part
+                if last in ("ii", "iii", "iv", "jr", "jr.", "sr", "sr."):
+                    last = parts[-2] if len(parts) > 2 else last
+                injured_last[last] = (name, status)
+
+    missing_usage = 0.0
     for player in roster:
-        p_name = player.get("name", "").lower()
+        p_name = player.get("name", "").strip().lower()
         p_usg = player.get("usg", 0.0)
-        
-        # Check if this player is OUT
-        if p_name in injured_map:
-            status = injured_map[p_name].lower()
-            if "out" in status:
-                missing_usage += p_usg
+        if not p_name or p_usg <= 0:
+            continue
 
-    # Calculate modifier
-    if missing_usage >= 0.40:
+        # Try exact match first, then last-name fallback
+        status = injured_exact.get(p_name)
+        if status is None:
+            p_parts = p_name.split()
+            p_last = p_parts[-1] if p_parts else ""
+            if p_last in ("ii", "iii", "iv", "jr", "jr.", "sr", "sr."):
+                p_last = p_parts[-2] if len(p_parts) > 2 else p_last
+            match = injured_last.get(p_last)
+            if match:
+                status = match[1]
+
+        if status is None:
+            continue
+
+        if "out" in status:
+            missing_usage += p_usg
+        elif "day" in status or "questionable" in status or "doubtful" in status:
+            # Day-to-day / questionable: 50% weight (may or may not play)
+            missing_usage += p_usg * 0.5
+
+    # Calculate modifier (continuous instead of step function)
+    if missing_usage < 0.10:
+        return 1.0
+    elif missing_usage >= 0.40:
         return 1.20
-    elif missing_usage >= 0.30:
-        return 1.15
-    elif missing_usage >= 0.20:
-        return 1.05
-    elif missing_usage >= 0.15:
-        return 1.02
-        
-    return 1.0
+    else:
+        # Linear interpolation: 10% → 1.0, 40% → 1.20
+        t = (missing_usage - 0.10) / 0.30
+        return round(1.0 + t * 0.20, 3)
 
 
 def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
@@ -880,7 +959,7 @@ def calculate_ranking_score(player_data: dict, props: list, game_time_utc: str,
         # Resolve DvP rank (position-filtered opponent rank)
         dvp_rank = _resolve_dvp_stat_rank(stat_name, dvp_entry) if dvp_entry else None
 
-        score, edge, player_avg, urgency, recommended_direction, _, _, _ = calculate_prop_ranking_score(
+        score, edge, player_avg, urgency, recommended_direction, _, _, _, _ = calculate_prop_ranking_score(
             prop, averages, game_time_utc,
             lineup_status=lineup_status,
             hit_rate=hit_rate,
@@ -1857,6 +1936,8 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
         # Calculate Usage Vacuum Modifier
         usage_vacuum = calculate_usage_vacuum_score(team_abbr_for_lineup, injuries_cache, team_rosters)
         ep["usage_vacuum"] = usage_vacuum
+        if usage_vacuum > 1.0:
+            print(f"  🔄 Usage vacuum for {player_name} ({team_abbr_for_lineup}): {usage_vacuum:.3f}")
 
         # Determine if player is home tonight for ranking
         is_home_tonight_rank = None
@@ -2050,8 +2131,8 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
             dvp_entry = dvp_cache.get((opponent_abbr, dvp_group), {})
             dvp_rank = _resolve_dvp_stat_rank(stat_name, dvp_entry)
 
-            # Calculate ranking score with all context (v8 — real DvP)
-            prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier, role_change_dampener = calculate_prop_ranking_score(
+            # Calculate ranking score with all context (v9 — line divergence skepticism)
+            prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier, role_change_dampener, line_divergence_dampener = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
                 hit_rate=hit_rate,
@@ -2109,6 +2190,10 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
 
             # Compute new modifiers for Firestore storage
             consistency_mod, cv_value = calculate_consistency_modifier(game_log, stat_name, recommended_direction)
+            # Apply same low-minutes adjustment as scoring function
+            if recommended_direction == "Under" and consistency_mod > 1.0 and avg_minutes is not None and avg_minutes < 22.0:
+                minutes_factor = max(0.0, min(1.0, (avg_minutes - 10.0) / 12.0))
+                consistency_mod = 1.0 + (consistency_mod - 1.0) * minutes_factor
             rest_days_val = calculate_rest_days(game_log, game_time_utc)
             rest_mod = calculate_rest_modifier(rest_days_val, recommended_direction)
             sample_conf = calculate_sample_size_confidence(game_log)
@@ -2175,6 +2260,7 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 "avgMinutes": avg_minutes,
                 "usageVacuum": ep.get("usage_vacuum", 1.0),
                 "roleChangeDampener": round(role_change_dampener, 3),
+                "lineDivergenceDampener": round(line_divergence_dampener, 3),
                 # v6 modifiers
                 "consistencyModifier": round(consistency_mod, 3),
                 "coefficientOfVariation": cv_value,

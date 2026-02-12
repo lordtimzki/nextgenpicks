@@ -529,8 +529,19 @@ struct RankingBreakdownSheet: View {
             let direction = player.recommendedDirection == "Over" ? "penalty" : "boost"
             return "\(direction) based on \(String(format: "%.0f", penalty))% decline"
         } else if td.trend == "surging" {
-            let direction = player.recommendedDirection == "Over" ? "1.05x boost" : "0.95x risk penalty"
-            return "\(direction) (Surging)"
+            if player.recommendedDirection == "Over" {
+                return "1.05x boost (Surging)"
+            } else {
+                let line = player.mainProp?.line ?? 0
+                let recentAvg = td.recentAvg
+                if recentAvg >= line && line > 0 {
+                    return String(format: "Heavy penalty — recent avg %.1f is ABOVE line %.1f (role change)", recentAvg, line)
+                } else if recentAvg >= line * 0.85 && line > 0 {
+                    return String(format: "0.85x penalty — recent avg %.1f is near line %.1f", recentAvg, line)
+                } else {
+                    return "0.95x risk penalty (Surging)"
+                }
+            }
         }
         return nil
     }
@@ -571,6 +582,16 @@ struct RankingBreakdownSheet: View {
         return "\(pct)% edge dampened (injury-adjusted line)"
     }
 
+    private var lineDivergenceDampenerModifier: String? {
+        guard let dampener = player.lineDivergenceDampener, dampener < 1.0 else { return nil }
+        let pct = Int(round((1.0 - dampener) * 100))
+        guard let avg = player.playerAverage, let line = player.mainProp?.line, line > 0 else {
+            return "\(pct)% dampened (line divergence)"
+        }
+        let divergePct = Int(round(((line - avg) / avg) * 100))
+        return "\(pct)% dampened — line is \(divergePct)% above avg (books expect expanded role)"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -600,7 +621,7 @@ struct RankingBreakdownSheet: View {
                     }
 
                     // Modifiers
-                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil || lineMagnitudeModifier != nil || roleChangeDampenerModifier != nil {
+                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil || lineMagnitudeModifier != nil || roleChangeDampenerModifier != nil || lineDivergenceDampenerModifier != nil {
                         Divider().background(Color.border)
                         modifiersSection
                     }
@@ -681,7 +702,7 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v8)")
+            Text("Formula (v9)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
@@ -1054,6 +1075,17 @@ struct RankingBreakdownSheet: View {
                         .font(.caption)
                         .foregroundStyle(Color.brandOrange)
                     Text("Role Change: \(rc)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let ld = lineDivergenceDampenerModifier {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.bubble.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.brandRed)
+                    Text("Line Skepticism: \(ld)")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                 }
