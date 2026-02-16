@@ -592,6 +592,27 @@ struct RankingBreakdownSheet: View {
         return "\(pct)% dampened — line is \(divergePct)% above avg (books expect expanded role)"
     }
 
+    private var h2hModifierText: String? {
+        guard let mod = player.h2hModifier, mod != 1.0, let games = player.h2hGames, games >= 2 else { return nil }
+        let opp = player.opponentAbbr ?? "OPP"
+        let impact = mod > 1.0 ? "boost" : "penalty"
+        var text = String(format: "%.2fx %@ (%d games vs %@", mod, impact, games, opp)
+        if let h2hAvg = player.h2hAvg, let overall = player.playerAverage {
+            text += String(format: " — avg %.1f vs overall %.1f", h2hAvg, overall)
+        }
+        text += ")"
+        return text
+    }
+
+    private var paceModifierText: String? {
+        guard let mod = player.paceModifier, mod != 1.0 else { return nil }
+        let impact = mod > 1.0 ? "boost" : "penalty"
+        if let pace = player.expectedPace {
+            return String(format: "%.2fx %@ (Expected pace: %.0f possessions)", mod, impact, pace)
+        }
+        return String(format: "%.2fx %@", mod, impact)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -621,7 +642,7 @@ struct RankingBreakdownSheet: View {
                     }
 
                     // Modifiers
-                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil || lineMagnitudeModifier != nil || roleChangeDampenerModifier != nil || lineDivergenceDampenerModifier != nil {
+                    if lineupMultiplier != nil || trendModifier != nil || homeAwayModifier != nil || minutesModifier != nil || usageVacuumModifier != nil || lineMagnitudeModifier != nil || roleChangeDampenerModifier != nil || lineDivergenceDampenerModifier != nil || h2hModifierText != nil || paceModifierText != nil {
                         Divider().background(Color.border)
                         modifiersSection
                     }
@@ -702,7 +723,7 @@ struct RankingBreakdownSheet: View {
 
     private var formulaSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Formula (v9)")
+            Text("Formula (v10)")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.secondaryText)
@@ -714,7 +735,7 @@ struct RankingBreakdownSheet: View {
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Modifiers: Lineup, Trend, Venue, Volume, Usage Vacuum, Line Size, Role Change")
+            Text("Modifiers: Lineup, Trend, Venue, Volume, Usage, H2H, Pace, Line Size, Role Change")
                 .font(.caption2)
                 .foregroundStyle(Color.secondaryText.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
@@ -1086,6 +1107,28 @@ struct RankingBreakdownSheet: View {
                         .font(.caption)
                         .foregroundStyle(Color.brandRed)
                     Text("Line Skepticism: \(ld)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let h2h = h2hModifierText {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.2.fill")
+                        .font(.caption)
+                        .foregroundStyle((player.h2hModifier ?? 1.0) >= 1.0 ? Color.brandEmerald : Color.brandRed)
+                    Text("H2H: \(h2h)")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+
+            if let pace = paceModifierText {
+                HStack(spacing: 8) {
+                    Image(systemName: "hare.fill")
+                        .font(.caption)
+                        .foregroundStyle((player.paceModifier ?? 1.0) >= 1.0 ? Color.brandEmerald : Color.brandOrange)
+                    Text("Pace: \(pace)")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                 }

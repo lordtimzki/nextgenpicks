@@ -452,6 +452,8 @@ def _recency_weighted_trimmed_avg(game_log: list, stat_key: str) -> float | None
     - Uses all available games (up to 10)
     - Drops the single highest and lowest values (trimmed)
     - Weights remaining games by recency: most recent = 1.0, oldest = 0.5
+    - Discounts blowout games (plus_minus >= 20 or <= -20) by 50% weight
+      because stats in blowouts are often inflated/deflated by garbage time
     Returns None if fewer than 4 games (trimming needs margin).
     """
     if not game_log or len(game_log) < 4:
@@ -472,7 +474,14 @@ def _recency_weighted_trimmed_avg(game_log: list, stat_key: str) -> float | None
     total_weighted = 0.0
     total_weight = 0.0
     for orig_idx, val in trimmed:
-        weight = 1.0 - (orig_idx / max(1, n - 1)) * 0.5  # 1.0 → 0.5
+        recency_weight = 1.0 - (orig_idx / max(1, n - 1)) * 0.5  # 1.0 → 0.5
+
+        # Blowout discount: games with |plus_minus| >= 20 are likely affected
+        # by garbage time — discount their weight by 50%
+        plus_minus = game_log[orig_idx].get("plus_minus", 0)
+        blowout_factor = 0.5 if abs(plus_minus) >= 20 else 1.0
+
+        weight = recency_weight * blowout_factor
         total_weighted += val * weight
         total_weight += weight
 
@@ -490,14 +499,16 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
                                   usage_vacuum_modifier: float = 1.0,
                                   opp_stat_rank: int = None,
                                   position: str = "",
-                                  dvp_rank: int = None) -> tuple:
+                                  dvp_rank: int = None,
+                                  h2h_modifier: float = 1.0,
+                                  pace_modifier: float = 1.0) -> tuple:
     """
     Calculate ranking score for a SINGLE prop.
     Returns (total_score, edge_value, player_average_for_stat, urgency_score,
              recommended_direction, ha_modifier, min_modifier, role_change_dampener,
              line_divergence_dampener)
 
-    Formula v9:
+    Formula v10:
     - Recency-weighted trimmed mean (outlier-resistant averages)
     - Edge 40%, Matchup 25%, Odds 15%, Efficiency 10%, HitRate 10%
     - Hit rate reduced from 20%→10% (too correlated with edge on small samples)
@@ -632,6 +643,7 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     # Extreme matchup: Edge 35%, Matchup 30% (sum stays 1.0)
     # Hit rate reduced from 20%→10%: too correlated with edge on small samples
     total = (edge_score * edge_weight) + (matchup_score * matchup_weight) + (hit_rate_score * 0.10) + (efficiency_score * 0.10) + (odds_score * 0.15)
+    pre_modifier = total
 
     # Line magnitude dampener — low lines (e.g. 0.5 3PM) are inherently volatile
     if line < 2.0:
@@ -742,11 +754,19 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     rest_mod = calculate_rest_modifier(rest_days_val, recommended_direction)
     total *= rest_mod
 
+    # Apply Head-to-Head Modifier (player's history vs tonight's opponent)
+    total *= h2h_modifier
+
+    # Apply Pace Modifier (expected game tempo environment)
+    total *= pace_modifier
+
     # Apply Sample Size Confidence (LAST — scales the fully-adjusted score)
     sample_conf = calculate_sample_size_confidence(game_log or [])
     total *= sample_conf
 
     # Final clamp
+    if total < pre_modifier:
+        total = max(total, pre_modifier * 0.4)
     total = max(0.0, min(10.0, total))
 
     return total, round(edge, 2), round(player_avg, 1), urgency_score, recommended_direction, round(ha_modifier, 3), round(min_modifier, 3), round(role_change_dampener, 3), round(line_divergence_dampener, 3)
@@ -1062,6 +1082,113 @@ def calculate_minutes_confidence(games: list) -> tuple:
     return modifier, round(avg_min, 1)
 
 
+def calculate_h2h_modifier(h2h_log: list, opponent_abbr: str, stat_name: str,
+                            player_avg: float, recommended_direction: str) -> tuple:
+    """
+    Calculate modifier based on player's head-to-head history vs tonight's opponent.
+    Filters the full-season game log for games against the specific opponent.
+    If the H2H average diverges significantly from the overall average, apply a modifier.
+
+    Returns (modifier, h2h_avg, h2h_games) — modifier in [0.90, 1.10].
+    Returns (1.0, None, 0) if fewer than 2 H2H games or no data.
+    """
+    if not h2h_log or not opponent_abbr or player_avg <= 0:
+        return 1.0, None, 0
+
+    stat_key = _resolve_stat_key(stat_name)
+    if not stat_key:
+        return 1.0, None, 0
+
+    # Filter games against tonight's opponent
+    h2h_games = []
+    for game in h2h_log:
+        matchup = game.get("matchup", "")
+        # Matchup formats: "GSW vs. SAS" or "GSW @ SAS"
+        if opponent_abbr in matchup:
+            h2h_games.append(game)
+
+    if len(h2h_games) < 2:
+        return 1.0, None, len(h2h_games)
+
+    # Compute H2H average for this stat
+    h2h_values = [_game_stat_value(g, stat_key) for g in h2h_games]
+    h2h_avg = sum(h2h_values) / len(h2h_values)
+
+    # How much does the H2H average diverge from overall average?
+    divergence = (h2h_avg - player_avg) / player_avg if player_avg > 0 else 0
+
+    # Convert to modifier: +20% H2H → 1.08 for Over, 0.92 for Under
+    # Scaled linearly, capped at ±10%
+    raw_effect = max(-0.10, min(0.10, divergence * 0.40))
+
+    if recommended_direction == "Over":
+        modifier = 1.0 + raw_effect  # H2H above avg → boost Over
+    else:
+        modifier = 1.0 - raw_effect  # H2H above avg → penalize Under
+
+    modifier = max(0.90, min(1.10, modifier))
+    return modifier, round(h2h_avg, 1), len(h2h_games)
+
+
+def calculate_pace_modifier(player_team_pace: float, opp_team_pace: float,
+                            stat_name: str, recommended_direction: str) -> tuple:
+    """
+    Calculate modifier based on expected game pace environment.
+    Uses the average of both teams' pace to estimate game tempo.
+
+    Higher-than-average pace → more possessions → higher expected stats (boost Over).
+    Lower-than-average pace → fewer possessions → lower expected stats (boost Under).
+
+    Pace mainly affects counting stats (points, assists, 3PM, PRA combos).
+    Rebounds are less pace-sensitive. Steals/blocks nearly unaffected.
+
+    Returns (modifier, expected_pace) — modifier in [0.94, 1.06].
+    """
+    if not player_team_pace or not opp_team_pace:
+        return 1.0, None
+
+    # League average pace is ~100.0 possessions/game (varies by season)
+    league_avg_pace = 100.0
+    expected_game_pace = (player_team_pace + opp_team_pace) / 2.0
+
+    # How much the expected game pace deviates from average
+    pace_deviation_pct = (expected_game_pace - league_avg_pace) / league_avg_pace
+
+    # Stat sensitivity to pace:
+    # Points/3PM/PRA: highly sensitive (~1.0x multiplier on pace effect)
+    # Assists: moderately sensitive (~0.8x)
+    # Rebounds: less sensitive (~0.4x — contested boards less pace-dependent)
+    stat_lower = stat_name.lower()
+    if "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
+        sensitivity = 0.85  # Blend
+    elif "pts + reb" in stat_lower:
+        sensitivity = 0.75
+    elif "pts + ast" in stat_lower:
+        sensitivity = 0.90
+    elif "3-pointer" in stat_lower or "3pm" in stat_lower:
+        sensitivity = 1.0
+    elif "point" in stat_lower or "pts" in stat_lower:
+        sensitivity = 1.0
+    elif "assist" in stat_lower or "ast" in stat_lower:
+        sensitivity = 0.80
+    elif "rebound" in stat_lower or "reb" in stat_lower:
+        sensitivity = 0.40
+    else:
+        sensitivity = 0.60
+
+    # Raw effect: ±5% pace deviation → ±3% score modifier (at full sensitivity)
+    raw_effect = pace_deviation_pct * 0.60 * sensitivity
+    raw_effect = max(-0.06, min(0.06, raw_effect))
+
+    if recommended_direction == "Over":
+        modifier = 1.0 + raw_effect  # Fast pace → boost Over
+    else:
+        modifier = 1.0 - raw_effect  # Fast pace → penalize Under
+
+    modifier = max(0.94, min(1.06, modifier))
+    return modifier, round(expected_game_pace, 1)
+
+
 def fetch_json_httpx(url: str, headers: dict = None) -> tuple:
     """Fetch JSON using httpx (available in Cloud Functions)."""
     default_headers = {
@@ -1341,18 +1468,21 @@ def get_player_stats_quick(player_name: str, bio_cache: dict = None) -> dict | N
                 pass
 
         try:
-            all_games = None
+            all_games_full = None
             for attempt in range(3):
                 try:
                     log = playergamelog.PlayerGameLog(
                         player_id=player_id, season='2025-26')
-                    all_games = log.get_normalized_dict()['PlayerGameLog'][:10]
+                    all_games_full = log.get_normalized_dict()['PlayerGameLog']
                     break
                 except Exception:
                     if attempt < 2:
                         time.sleep(1.0 * (attempt + 1))
                     else:
                         raise
+
+            # Use up to 10 recent games for core analysis
+            all_games = all_games_full[:10] if all_games_full else None
 
             if all_games:
                 game_log_team = str(all_games[0]['MATCHUP'].split(" ")[0])
@@ -1368,26 +1498,40 @@ def get_player_stats_quick(player_name: str, bio_cache: dict = None) -> dict | N
                 avg_ast = sum(g['AST'] for g in recent5) / len(recent5)
                 avg_fg3m = sum(g['FG3M'] for g in recent5) / len(recent5)
 
-                # Build full game log (up to 10 games) with minutes
-                game_log = []
-                for g in all_games:
-                    # Parse minutes: NBA API MIN field is "MM:SS" or "MM" string
+                def _parse_game_minutes(g):
                     raw_min = g.get('MIN', '0')
                     try:
                         if ':' in str(raw_min):
                             parts = str(raw_min).split(':')
-                            minutes = int(parts[0]) + int(parts[1]) / 60.0
-                        else:
-                            minutes = float(raw_min)
+                            return int(parts[0]) + int(parts[1]) / 60.0
+                        return float(raw_min)
                     except (ValueError, TypeError):
-                        minutes = 0.0
+                        return 0.0
 
+                # Build full game log (up to 10 games) with minutes
+                game_log = []
+                for g in all_games:
                     game_log.append({
                         "pts": g['PTS'],
                         "reb": g['REB'],
                         "ast": g['AST'],
                         "fg3m": g['FG3M'],
-                        "min": round(minutes, 1),
+                        "min": round(_parse_game_minutes(g), 1),
+                        "plus_minus": g.get('PLUS_MINUS', 0),
+                        "matchup": g['MATCHUP'],
+                        "date": g['GAME_DATE']
+                    })
+
+                # Build full season H2H log (for vs-opponent modifiers)
+                # Uses the entire season, not just last 10 games
+                h2h_log = []
+                for g in (all_games_full or []):
+                    h2h_log.append({
+                        "pts": g['PTS'],
+                        "reb": g['REB'],
+                        "ast": g['AST'],
+                        "fg3m": g['FG3M'],
+                        "min": round(_parse_game_minutes(g), 1),
                         "matchup": g['MATCHUP'],
                         "date": g['GAME_DATE']
                     })
@@ -1408,6 +1552,7 @@ def get_player_stats_quick(player_name: str, bio_cache: dict = None) -> dict | N
                     },
                     "last5Games": game_log[:5],
                     "gameLog": game_log,
+                    "h2hLog": h2h_log,
                 }
         except Exception as e:
             print(f"Could not get game log for {player_name}: {e}")
@@ -1529,7 +1674,13 @@ def _resolve_opponent_stat_rank(stat_name: str, opp_stats: dict) -> int | None:
 def calculate_consistency_modifier(game_log: list, stat_name: str, recommended_direction: str) -> tuple:
     """
     Calculate consistency modifier based on coefficient of variation.
-    Consistent players get a boost for Over, volatile players get a boost for Under.
+    Uses a continuous curve instead of step tiers for smoother scoring.
+
+    Consistent players (low CV) → boost Over, penalize Under
+    Volatile players (high CV)  → penalize Over, boost Under
+
+    Curve: CV 0.10 → ±0.08, CV 0.275 → 0.0 (neutral), CV 0.50 → ±0.08
+    Max modifier swing: ±8% (range [0.92, 1.08]).
     Returns (modifier, cv_value). Requires >= 4 games, else (1.0, 0.0).
     """
     if not game_log or len(game_log) < 4:
@@ -1548,14 +1699,28 @@ def calculate_consistency_modifier(game_log: list, stat_name: str, recommended_d
     std_dev = variance ** 0.5
     cv = std_dev / mean
 
-    if cv < 0.20:
-        # Consistent player
-        modifier = 1.06 if recommended_direction == "Over" else 0.94
-    elif cv > 0.35:
-        # Volatile player
-        modifier = 0.94 if recommended_direction == "Over" else 1.06
+    # Continuous curve: midpoint at CV = 0.275 (neutral)
+    # CV < 0.275 → consistent (positive for Over, negative for Under)
+    # CV > 0.275 → volatile (negative for Over, positive for Under)
+    # Max effect at CV ≤ 0.10 or CV ≥ 0.50, capped at ±0.08
+    midpoint = 0.275
+    max_effect = 0.08  # ±8% max swing
+    half_range = 0.175  # distance from midpoint to max effect
+
+    deviation = midpoint - cv  # positive = consistent, negative = volatile
+    # Normalize to [-1, 1] range and clamp
+    normalized = max(-1.0, min(1.0, deviation / half_range))
+    # Raw effect: positive means "consistent boost"
+    raw_effect = normalized * max_effect
+
+    # Apply direction: consistent helps Over, volatile helps Under
+    if recommended_direction == "Over":
+        modifier = 1.0 + raw_effect  # consistent → boost, volatile → penalty
     else:
-        modifier = 1.0
+        modifier = 1.0 - raw_effect  # consistent → penalty, volatile → boost
+
+    # Clamp to safety range
+    modifier = max(0.92, min(1.08, modifier))
 
     return modifier, round(cv, 3)
 
@@ -2131,7 +2296,29 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
             dvp_entry = dvp_cache.get((opponent_abbr, dvp_group), {})
             dvp_rank = _resolve_dvp_stat_rank(stat_name, dvp_entry)
 
-            # Calculate ranking score with all context (v9 — line divergence skepticism)
+            # Pre-compute H2H and Pace modifiers (need recommended_direction first)
+            # Quick direction estimate from averages for modifier calculation
+            stat_key_tmp = _resolve_stat_key(stat_name)
+            quick_avg = 0
+            if stat_key_tmp == "pra":
+                quick_avg = player_averages.get("pts", 0) + player_averages.get("reb", 0) + player_averages.get("ast", 0)
+            elif stat_key_tmp:
+                quick_avg = player_averages.get(stat_key_tmp, 0)
+            quick_direction = "Over" if quick_avg > line else "Under"
+
+            # Head-to-Head modifier: full-season history vs tonight's opponent
+            h2h_log = nba_stats.get("h2hLog", []) if nba_stats else []
+            h2h_mod, h2h_avg, h2h_games = calculate_h2h_modifier(
+                h2h_log, opponent_abbr, stat_name, quick_avg, quick_direction)
+
+            # Pace modifier: expected game environment
+            player_team_defense = team_defense_cache.get(team_abbr, {})
+            pace_mod, expected_pace = calculate_pace_modifier(
+                player_team_defense.get("pace"),
+                opp_def_stats.get("pace"),
+                stat_name, quick_direction)
+
+            # Calculate ranking score with all context (v10 — H2H + Pace)
             prop_score, edge, player_avg, urgency_score, recommended_direction, ha_modifier, min_modifier, role_change_dampener, line_divergence_dampener = calculate_prop_ranking_score(
                 prop, player_averages, game_time_utc,
                 lineup_status=lineup_status,
@@ -2145,7 +2332,9 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 usage_vacuum_modifier=ep.get("usage_vacuum", 1.0),
                 opp_stat_rank=opp_stat_rank,
                 position=position,
-                dvp_rank=dvp_rank
+                dvp_rank=dvp_rank,
+                h2h_modifier=h2h_mod,
+                pace_modifier=pace_mod
             )
 
             # Calculate matchup score for prop card (informational) — use DvP rank
@@ -2230,6 +2419,13 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 # Defense vs Position (DvP) — position-filtered opponent rank
                 "dvpRank": dvp_rank,
                 "dvpGroup": dvp_group,  # "G", "F", or "C"
+                # Head-to-Head history vs tonight's opponent
+                "h2hModifier": round(h2h_mod, 3),
+                "h2hAvg": h2h_avg,
+                "h2hGames": h2h_games,
+                # Pace-adjusted game environment
+                "paceModifier": round(pace_mod, 3),
+                "expectedPace": expected_pace,
                 # Efficiency data (player advanced stats)
                 "efficiencyScore": eff_score,
                 "playerAdvanced": {
@@ -2293,28 +2489,39 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
 
     print(f"📊 Created {len(all_prop_cards)} individual prop cards")
 
-    # 10. Sort and categorize props
+    # 10. Sort and categorize props (with player deduplication)
     all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
 
-    # "forYou" section: top 5 best-ranked props for 5-leg parlay builders
-    for_you_count = min(5, len(all_prop_cards))
-    for i, card in enumerate(all_prop_cards[:for_you_count]):
-        card["section"] = "forYou"
-        card["featured"] = True
+    # --- Player Deduplication for forYou & topPicks ---
+    # For parlay builders: each player should appear at most once in the
+    # featured sections.  Pick each player's best-scored prop, skip the rest
+    # into allProps.  This prevents "LeBron Pts, LeBron PRA, LeBron Pts+Reb"
+    # filling the entire forYou section.
+    seen_players_for_you = set()
+    seen_players_top = set()
+    for_you_cards = []
+    top_picks_cards = []
+    remaining_cards = []
 
-    # "topPicks" section: props 6-20 (next best after forYou)
-    top_picks_start = for_you_count
-    top_picks_end = min(20, len(all_prop_cards))
-    top_picks_count = top_picks_end - top_picks_start
+    for card in all_prop_cards:
+        pid = card.get("player_id", card.get("name", ""))
+        if len(for_you_cards) < 5 and pid not in seen_players_for_you:
+            card["section"] = "forYou"
+            card["featured"] = True
+            for_you_cards.append(card)
+            seen_players_for_you.add(pid)
+        elif len(top_picks_cards) < 15 and pid not in seen_players_top:
+            card["section"] = "topPicks"
+            card["featured"] = True
+            top_picks_cards.append(card)
+            seen_players_top.add(pid)
+        else:
+            card["section"] = "allProps"
+            card["featured"] = False
+            remaining_cards.append(card)
 
-    for card in all_prop_cards[top_picks_start:top_picks_end]:
-        card["section"] = "topPicks"
-        card["featured"] = True
-
-    # Mark remaining cards as allProps
-    for card in all_prop_cards[top_picks_end:]:
-        card["section"] = "allProps"
-        card["featured"] = False
+    for_you_count = len(for_you_cards)
+    top_picks_count = len(top_picks_cards)
 
     # Count trending badges
     hot_count = sum(1 for c in all_prop_cards if c["trending"] == "hot")
