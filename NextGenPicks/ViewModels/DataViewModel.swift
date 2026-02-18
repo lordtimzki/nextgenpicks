@@ -5,11 +5,16 @@ import Combine
 @MainActor
 class DataViewModel: ObservableObject {
 
+    // MARK: - Published Properties
     @Published var games: [Game] = []
     @Published var featuredProps: [PlayerCardData] = []
     @Published var forYouProps: [PlayerCardData] = []
     @Published var allProps: [PlayerCardData] = []
     @Published var searchResults: [PlayerCardData] = []
+    
+    // Internal state for user preferences and local model settings
+    @Published var userSettings = UserSettings()
+    
     @Published var isLoading: Bool = false
     @Published var isSearchLoading: Bool = false
     @Published var errorMessage: String?
@@ -17,6 +22,7 @@ class DataViewModel: ObservableObject {
     @Published var isRefreshing: Bool = false
     @Published var refreshComplete: Bool = false
 
+    // MARK: - Private Properties
     private let service: DataService
     private var refreshTimer: AnyCancellable?
     private var completeDismissTask: Task<Void, Never>?
@@ -25,7 +31,74 @@ class DataViewModel: ObservableObject {
 
     init(service: DataService) {
         self.service = service
+        loadSettingsLocally() // Initialize local state on startup
     }
+
+    // MARK: - Personalization Logic
+
+    /// Calculates weighted ranking scores based on explicit preferences and implicit behavior.
+    var personalizedProps: [PlayerCardData] {
+        allProps.map { prop in
+            var p = prop
+            var multiplier = 1.0
+            
+            // Weighting for favorited teams
+            if userSettings.favoriteTeams.contains(prop.teamAbbr) { 
+                multiplier += 0.2 
+            }
+            
+            // Weighting for strategic stat categories
+            if userSettings.focusedStats.contains(prop.statNameFull ?? "") { 
+                multiplier += 0.3 
+            }
+            
+            // Behavioral boost based on interaction frequency
+            let clicks = userSettings.interactionHistory[prop.name, default: 0]
+            if clicks > 5 { multiplier += 0.1 }
+
+            let baseScore = prop.rankingScore ?? 5.0
+            p.rankingScore = min(10.0, baseScore * multiplier)
+            
+            return p
+        }
+        .sorted { ($0.rankingScore ?? 0) > ($1.rankingScore ?? 0) }
+    }
+
+    /// Primary filtered feed that respects ranking thresholds and risk tolerance parameters.
+    var filteredFeaturedProps: [PlayerCardData] {
+        personalizedProps.filter { prop in
+            // A. Filter by Minimum Ranking Score
+            guard (prop.rankingScore ?? 0) >= userSettings.minRankingScore else { return false }
+            
+            // B. Filter by Confidence
+            if userSettings.minConfidence == "Strong Only" && prop.confidence != "Strong" { return false }
+            if userSettings.minConfidence == "Lean+" && (prop.confidence == "Low" || prop.confidence == "None") { return false }
+            
+            // C. Hide Fades
+            if userSettings.hideFades && (prop.trending == .fade || prop.isFade == true) { return false }
+            
+            // D. Risk Tolerance Logic
+            let edgePct = (prop.edge ?? 0) / (prop.mainProp?.line ?? 1.0)
+            let hitRate = Double(prop.hitRate?.hits ?? 0) / Double(prop.hitRate?.total ?? 1)
+            let odds = prop.mainProp?.odds ?? 0 // Assuming odds are stored as Int
+
+            switch userSettings.riskTolerance {
+            case .conservative:
+                // Logic: Odds -150 or better, Edge > 10%, Hit Rate 4/5+
+                return odds <= -150 && edgePct > 0.10 && hitRate >= 0.80
+                
+            case .balanced:
+                // Logic: Standard odds (-110 to +110), Edge > 5%, Hit Rate 3/5+
+                return odds >= -110 && odds <= 110 && edgePct > 0.05 && hitRate >= 0.60
+                
+            case .aggressive:
+                // Logic: Plus-money accepted, strong edge/matchup
+                return true // Aggressive shows all, including high-payout variance picks
+            }
+        }
+    }
+
+    // MARK: - Data Initialization
 
     func loadInitialData() async {
         isLoading = true
@@ -35,10 +108,14 @@ class DataViewModel: ObservableObject {
             async let fetchedGames = service.fetchGames()
             async let fetchedTopPicks = service.fetchLiveProps()
             async let fetchedForYou = service.fetchForYouProps()
+            async let fetchedAll = service.fetchAllProps()
 
             self.games = try await fetchedGames
             self.featuredProps = try await fetchedTopPicks
             self.forYouProps = try await fetchedForYou
+            self.allProps = try await fetchedAll
+            
+            self.updateSections()
         } catch {
             self.errorMessage = "Failed to load data: \(error.localizedDescription)"
         }
@@ -50,6 +127,48 @@ class DataViewModel: ObservableObject {
             startRefreshListener()
             startCountdownTimer()
         }
+    }
+    
+    private func updateSections() {
+        // Populates home sections based on filtered rankings and display limits
+        self.featuredProps = Array(filteredFeaturedProps.prefix(userSettings.propsPerSection))
+        
+        // Betting Style affects parlay section visibility
+        if userSettings.bettingStyle == .singles {
+            self.forYouProps = []
+        } else {
+            self.forYouProps = Array(filteredFeaturedProps.prefix(5))
+        }
+    }
+
+    // MARK: - State Management & Persistence
+
+    func logInteraction(for player: PlayerCardData) {
+        userSettings.interactionHistory[player.name, default: 0] += 1
+        saveSettingsLocally()
+        
+        // Refresh sections to apply behavioral boost immediately
+        self.updateSections()
+        objectWillChange.send() 
+    }
+
+    func saveSettingsLocally() {
+        if let encoded = try? JSONEncoder().encode(userSettings) {
+            UserDefaults.standard.set(encoded, forKey: "user_settings")
+        }
+    }
+
+    private func loadSettingsLocally() {
+        if let data = UserDefaults.standard.data(forKey: "user_settings"),
+           let decoded = try? JSONDecoder().decode(UserSettings.self, from: data) {
+            self.userSettings = decoded
+        }
+    }
+
+    func trackProp(_ player: PlayerCardData, stat: PlayerProp, direction: String) {
+        let newProp = TrackedProp(id: stat.id, playerName: player.name, statName: stat.statName, line: stat.line, type: direction, date: Date())
+        userSettings.trackedHistory.append(newProp)
+        saveSettingsLocally()
     }
 
     // MARK: - Real-time Refresh Listener
@@ -116,6 +235,7 @@ class DataViewModel: ObservableObject {
             if !allProps.isEmpty {
                 self.allProps = try await service.fetchAllProps()
             }
+            self.updateSections()
         } catch {
             print("Failed to reload props: \(error)")
         }
@@ -297,7 +417,7 @@ class DataViewModel: ObservableObject {
     }
 }
 
-// MARK: - Search Data Models
+// MARK: - Search Models
 
 struct PlayerInfo: Identifiable, Hashable {
     let id: String
