@@ -35,57 +35,38 @@ class DataViewModel: ObservableObject {
 
     // MARK: - Filtered Props (client-side)
 
-    /// All props with personalization multipliers applied, sorted by score
-    var personalizedProps: [PlayerCardData] {
-        allProps.map { prop in
-            var p = prop
-            var multiplier = 1.0
-
-            // Explicit context: favorite teams boost
-            if userSettings.favoriteNBATeams.contains(prop.teamAbbr) {
-                multiplier += 0.2
-            }
-            // Explicit context: focused stats boost
-            if userSettings.focusedStats.contains(prop.statNameFull ?? "") {
-                multiplier += 0.3
-            }
-            let baseScore = prop.rankingScore ?? 5.0
-            p.rankingScore = min(10.0, baseScore * multiplier)
-            return p
-        }
-        .sorted { ($0.rankingScore ?? 0) > ($1.rankingScore ?? 0) }
-    }
-
-    /// Props filtered by user settings (ranking threshold, fades, risk tolerance)
+    /// All props sorted by ranking score (no personalization — pure ranking)
     var filteredProps: [PlayerCardData] {
-        personalizedProps.filter { prop in
-            // Minimum ranking score
-            guard (prop.rankingScore ?? 0) >= userSettings.minRankingScore else { return false }
+        allProps
+            .sorted { ($0.rankingScore ?? 0) > ($1.rankingScore ?? 0) }
+            .filter { prop in
+                // Minimum ranking score
+                guard (prop.rankingScore ?? 0) >= userSettings.minRankingScore else { return false }
 
-            // Focused stats filter
-            if let statFull = prop.statNameFull, !userSettings.focusedStats.contains(statFull) {
-                return false
+                // Focused stats filter
+                if let statFull = prop.statNameFull, !userSettings.focusedStats.contains(statFull) {
+                    return false
+                }
+
+                // Hide fades
+                if userSettings.hideFades && (prop.trending == .fade || prop.isFade == true) { return false }
+
+                // Risk tolerance
+                let edgePct = (prop.edge ?? 0) / (prop.line ?? 1.0)
+                let hitRate = Double(prop.hitRate?.hits ?? 0) / Double(max(prop.hitRate?.total ?? 1, 1))
+                let odds = prop.overOdds ?? prop.underOdds ?? -110
+
+                switch userSettings.riskTolerance {
+                case .noPreference:
+                    return true
+                case .conservative:
+                    return odds <= -150 && edgePct > 0.10 && hitRate >= 0.80
+                case .balanced:
+                    return odds >= -110 && odds <= 110 && edgePct > 0.05 && hitRate >= 0.60
+                case .aggressive:
+                    return true
+                }
             }
-
-            // Hide fades
-            if userSettings.hideFades && (prop.trending == .fade || prop.isFade == true) { return false }
-
-            // Risk tolerance
-            let edgePct = (prop.edge ?? 0) / (prop.line ?? 1.0)
-            let hitRate = Double(prop.hitRate?.hits ?? 0) / Double(max(prop.hitRate?.total ?? 1, 1))
-            let odds = prop.overOdds ?? prop.underOdds ?? -110
-
-            switch userSettings.riskTolerance {
-            case .noPreference:
-                return true
-            case .conservative:
-                return odds <= -150 && edgePct > 0.10 && hitRate >= 0.80
-            case .balanced:
-                return odds >= -110 && odds <= 110 && edgePct > 0.05 && hitRate >= 0.60
-            case .aggressive:
-                return true
-            }
-        }
     }
 
     /// Top picks: first N props by ranking
@@ -93,23 +74,64 @@ class DataViewModel: ObservableObject {
         Array(filteredProps.prefix(userSettings.propsPerSection))
     }
 
-    /// For You: top 4 props from games starting soonest (implicit time-of-day context)
+    /// For You: personalized curated picks based on user preferences
     var forYouProps: [PlayerCardData] {
         let now = Date()
-        // Sort by game time proximity (soonest first), then by ranking score
-        let sorted = filteredProps
-            .sorted { a, b in
-                let aTime = parseGameTime(a.gameTimeUTC) ?? .distantFuture
-                let bTime = parseGameTime(b.gameTimeUTC) ?? .distantFuture
-                // Only consider games that haven't started yet
-                let aRelevant = aTime > now ? aTime : .distantFuture
-                let bRelevant = bTime > now ? bTime : .distantFuture
-                if aRelevant != bRelevant {
-                    return aRelevant < bRelevant
-                }
-                return (a.rankingScore ?? 0) > (b.rankingScore ?? 0)
+        let hasFavoriteTeams = !userSettings.favoriteNBATeams.isEmpty
+
+        // Score each prop with a personalized relevance score
+        let scored: [(prop: PlayerCardData, score: Double)] = allProps.compactMap { prop in
+            // Skip fades
+            if prop.isFade == true || prop.trending == .fade { return nil }
+
+            let baseRank = prop.rankingScore ?? 0
+            var score = baseRank
+
+            // 1. Favorite team boost (+3.0) — strongest signal
+            if hasFavoriteTeams && userSettings.favoriteNBATeams.contains(prop.teamAbbr) {
+                score += 3.0
             }
-        return Array(sorted.prefix(4))
+
+            // 2. Focused stat boost (+1.0)
+            if userSettings.focusedStats.contains(prop.statNameFull ?? "") {
+                score += 1.0
+            }
+
+            // 3. High-confidence boost — hit rate 7/10+ gets a bump
+            let hits = prop.hitRate?.hits ?? 0
+            let total = prop.hitRate?.total ?? 1
+            let hitRate = Double(hits) / Double(max(total, 1))
+            if hitRate >= 0.7 && total >= 5 {
+                score += 1.5
+            }
+
+            // 4. Lineup confirmed boost — STARTING players are more actionable
+            if prop.lineupStatus == "STARTING" {
+                score += 1.0
+            }
+
+            // 5. Time-awareness — slight boost for upcoming (not started) games
+            if let gameTime = parseGameTime(prop.gameTimeUTC), gameTime > now {
+                score += 0.5
+            }
+
+            return (prop, score)
+        }
+
+        // Sort by personalized score, then enforce diversity (max 1 prop per player)
+        let sorted = scored.sorted { $0.score > $1.score }
+        var result: [PlayerCardData] = []
+        var seenPlayers: Set<String> = []
+
+        for item in sorted {
+            let playerKey = item.prop.name
+            if seenPlayers.contains(playerKey) { continue }
+            seenPlayers.insert(playerKey)
+            result.append(item.prop)
+            if result.count >= 5 { break }
+        }
+
+        return result
     }
 
     private func parseGameTime(_ isoString: String?) -> Date? {
