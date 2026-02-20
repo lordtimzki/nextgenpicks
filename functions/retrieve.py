@@ -84,7 +84,7 @@ def get_all_team_opponent_stats() -> dict:
     """
     Fetch opponent (allowed) stats for all NBA teams in one API call.
     Returns dict keyed by team abbreviation with opp_pts_rank, opp_reb_rank,
-    opp_ast_rank, opp_fg3m_rank (rank 1 = best defense, 30 = worst).
+    opp_ast_rank, opp_fg3m_rank (rank 1 = most allowed/worst D, 30 = least/best D).
     """
     print("DEBUG: Fetching opponent stats for all 30 NBA teams...")
 
