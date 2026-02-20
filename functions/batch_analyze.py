@@ -2195,6 +2195,15 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
               f"preserving old Firestore data: {', '.join(failed_names[:10])}"
               f"{'...' if len(failed_names) > 10 else ''}")
 
+    # Abort if too few players enriched — preserve existing Firestore feed entirely
+    MIN_ENRICHED_PLAYERS = 5
+    if len(enriched_players) < MIN_ENRICHED_PLAYERS:
+        print(f"\n⛔ ABORTING: Only {len(enriched_players)} players enriched "
+              f"(minimum {MIN_ENRICHED_PLAYERS}). NBA API likely down. "
+              f"Preserving existing Firestore feed.")
+        return {"status": "aborted", "reason": "insufficient_enrichment",
+                "enriched": len(enriched_players), "failed": len(failed_enrichment)}
+
     # 8. Calculate ranking scores for all players
     print("📊 Calculating ranking scores...")
     for ep in enriched_players:

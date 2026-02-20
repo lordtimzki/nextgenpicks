@@ -74,9 +74,6 @@ struct SearchView: View {
                     }
                 }
             }
-            .task {
-                await vm.loadAllProps()
-            }
         }
     }
 }

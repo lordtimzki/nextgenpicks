@@ -4,111 +4,100 @@ struct FeedView: View {
     @EnvironmentObject var vm: DataViewModel
     @State private var showSearch = false
 
-    // Grid Setup: 2 Columns
     let columns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12)
     ]
-    
+
     var body: some View {
         NavigationView {
             ZStack {
                 Color.background.ignoresSafeArea()
-                
-                if vm.isLoading && vm.featuredProps.isEmpty {
+
+                if vm.isLoading && vm.allProps.isEmpty {
                     ProgressView()
                         .tint(.white)
                 } else {
                     ScrollView {
-
                         VStack(alignment: .leading, spacing: 24) {
-                            
-                            // 1. Header
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Today's player props")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.gray)
 
-                                if !vm.refreshStatusText.isEmpty {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: vm.refreshComplete ? "checkmark.circle.fill" : (vm.isRefreshing ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath"))
-                                            .font(.caption2)
-                                        Text(vm.refreshStatusText)
-                                            .font(.caption)
+                            // 1. Header with search + settings
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Today's player props")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.gray)
+
+                                    if !vm.refreshStatusText.isEmpty {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: vm.refreshComplete ? "checkmark.circle.fill" : (vm.isRefreshing ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath"))
+                                                .font(.caption2)
+                                            Text(vm.refreshStatusText)
+                                                .font(.caption)
+                                        }
+                                        .foregroundStyle(vm.refreshComplete ? Color.brandEmerald.opacity(0.8) : .gray.opacity(0.7))
                                     }
-                                    .foregroundStyle(vm.refreshComplete ? Color.brandEmerald.opacity(0.8) : .gray.opacity(0.7))
+                                }
+
+                                Spacer()
+
+                                Button { showSearch = true } label: {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.title2)
+                                        .foregroundStyle(.white)
+                                        .padding(10)
+                                        .background(Color.white.opacity(0.1))
+                                        .clipShape(Circle())
+                                }
+
+                                Button { vm.showSettings = true } label: {
+                                    Image(systemName: "gearshape.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.white)
+                                        .padding(10)
+                                        .background(Color.white.opacity(0.1))
+                                        .clipShape(Circle())
                                 }
                             }
                             .padding(.horizontal)
                             .padding(.top, 10)
-                            
-                            // 2. For You Section (top 5 picks for parlay builders)
-                            if !vm.forYouProps.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Text("Top Picks")
-                                            .font(.title3)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(.white)
 
-                                        Spacer()
-
-                                        HStack {
-                                            Button{
-                                                showSearch = true
-                                            } label: {
-                                                Image(systemName: "magnifyingglass")
-                                                    .font(.title)
-                                                    .foregroundStyle(.white)
-                                                    .padding(10)
-                                                    .background(Color.white.opacity(0.1))
-                                                    .clipShape(Circle())
-                                            }
-                                        }
-                                        .foregroundStyle(Color.brandOrange)
-                                    }
-                                    .padding(.horizontal)
-
-                                    LazyVGrid(columns: columns, spacing: 12) {
-                                        ForEach(Array(vm.forYouProps.prefix(4))) { prop in
-                                            PlayerPropCard(player: prop)
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                }
-
-                                // Separator line
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(height: 1)
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 8)
-                            }
-
-                            // 3. Quick Stats Row
+                            // 2. Quick Stats Row
                             HStack(spacing: 12) {
                                 QuickStatCard(
                                     title: "Hot Props",
-                                    value: "\(vm.featuredProps.filter({ $0.trending == .hot }).count)",
+                                    value: "\(vm.allProps.filter({ $0.trending == .hot }).count)",
                                     iconName: "flame.fill",
                                     color: .brandOrange
                                 )
                                 QuickStatCard(
-                                    title: "Live Now",
-                                    value: "\(vm.games.filter({ $0.status == .live }).count)", // Using games data to show live count
-                                    iconName: "clock.fill",
-                                    color: .brandBlue
-                                )
-                                QuickStatCard(
                                     title: "Total Props",
-                                    value: "\(vm.featuredProps.count)",
+                                    value: "\(vm.allProps.count)",
                                     iconName: "list.bullet",
                                     color: .brandPurple
                                 )
                             }
                             .padding(.horizontal)
 
-                            // 4. Picks Section (sorted first by ranked props)
+                            // 3. For You Section (time-of-day sorted, 4 props)
+                            if !vm.forYouProps.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("For You")
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal)
+
+                                    LazyVGrid(columns: columns, spacing: 12) {
+                                        ForEach(vm.forYouProps) { prop in
+                                            PlayerPropCard(player: prop)
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+                            }
+
+                            // 4. Picks Section (all filtered props)
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Picks")
                                     .font(.title3)
@@ -117,7 +106,7 @@ struct FeedView: View {
                                     .padding(.horizontal)
 
                                 LazyVGrid(columns: columns, spacing: 12) {
-                                    ForEach(vm.featuredProps) { prop in
+                                    ForEach(vm.topPicks) { prop in
                                         PlayerPropCard(player: prop)
                                     }
                                 }
@@ -138,6 +127,10 @@ struct FeedView: View {
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchView()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.showSettings) {
+            SettingsView()
                 .environmentObject(vm)
         }
     }

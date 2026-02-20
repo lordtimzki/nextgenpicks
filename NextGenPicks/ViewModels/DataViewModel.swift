@@ -7,20 +7,19 @@ class DataViewModel: ObservableObject {
 
     // MARK: - Published Properties
     @Published var games: [Game] = []
-    @Published var featuredProps: [PlayerCardData] = []
-    @Published var forYouProps: [PlayerCardData] = []
     @Published var allProps: [PlayerCardData] = []
     @Published var searchResults: [PlayerCardData] = []
-    
-    // Internal state for user preferences and local model settings
+
+    // User preferences (persisted locally)
     @Published var userSettings = UserSettings()
-    
+
     @Published var isLoading: Bool = false
     @Published var isSearchLoading: Bool = false
     @Published var errorMessage: String?
     @Published var refreshStatusText: String = ""
     @Published var isRefreshing: Bool = false
     @Published var refreshComplete: Bool = false
+    @Published var showSettings: Bool = false
 
     // MARK: - Private Properties
     private let service: DataService
@@ -31,74 +30,94 @@ class DataViewModel: ObservableObject {
 
     init(service: DataService) {
         self.service = service
-        loadSettingsLocally() // Initialize local state on startup
+        loadSettingsLocally()
     }
 
-    // MARK: - Personalization Logic
+    // MARK: - Filtered Props (client-side)
 
-    /// Calculates weighted ranking scores based on explicit preferences and implicit behavior.
+    /// All props with personalization multipliers applied, sorted by score
     var personalizedProps: [PlayerCardData] {
         allProps.map { prop in
             var p = prop
             var multiplier = 1.0
-            
-            // Weighting for favorited teams
-            if userSettings.favoriteTeams.contains(prop.teamAbbr) { 
-                multiplier += 0.2 
-            }
-            
-            // Weighting for strategic stat categories
-            if userSettings.focusedStats.contains(prop.statNameFull ?? "") { 
-                multiplier += 0.3 
-            }
-            
-            // Behavioral boost based on interaction frequency
-            let clicks = userSettings.interactionHistory[prop.name, default: 0]
-            if clicks > 5 { multiplier += 0.1 }
 
+            // Explicit context: favorite teams boost
+            if userSettings.favoriteNBATeams.contains(prop.teamAbbr) {
+                multiplier += 0.2
+            }
+            // Explicit context: focused stats boost
+            if userSettings.focusedStats.contains(prop.statNameFull ?? "") {
+                multiplier += 0.3
+            }
             let baseScore = prop.rankingScore ?? 5.0
             p.rankingScore = min(10.0, baseScore * multiplier)
-            
             return p
         }
         .sorted { ($0.rankingScore ?? 0) > ($1.rankingScore ?? 0) }
     }
 
-    /// Primary filtered feed that respects ranking thresholds and risk tolerance parameters.
-    var filteredFeaturedProps: [PlayerCardData] {
+    /// Props filtered by user settings (ranking threshold, fades, risk tolerance)
+    var filteredProps: [PlayerCardData] {
         personalizedProps.filter { prop in
-            // A. Filter by Minimum Ranking Score
+            // Minimum ranking score
             guard (prop.rankingScore ?? 0) >= userSettings.minRankingScore else { return false }
-            
-            // B. Filter by Confidence
-            if userSettings.minConfidence == "Strong Only" && prop.confidence != "Strong" { return false }
-            if userSettings.minConfidence == "Lean+" && (prop.confidence == "Low" || prop.confidence == "None") { return false }
-            
-            // C. Hide Fades
+
+            // Focused stats filter
+            if let statFull = prop.statNameFull, !userSettings.focusedStats.contains(statFull) {
+                return false
+            }
+
+            // Hide fades
             if userSettings.hideFades && (prop.trending == .fade || prop.isFade == true) { return false }
-            
-            // D. Risk Tolerance Logic
-            let edgePct = (prop.edge ?? 0) / (prop.mainProp?.line ?? 1.0)
-            let hitRate = Double(prop.hitRate?.hits ?? 0) / Double(prop.hitRate?.total ?? 1)
-            let odds = prop.mainProp?.odds ?? 0 // Assuming odds are stored as Int
+
+            // Risk tolerance
+            let edgePct = (prop.edge ?? 0) / (prop.line ?? 1.0)
+            let hitRate = Double(prop.hitRate?.hits ?? 0) / Double(max(prop.hitRate?.total ?? 1, 1))
+            let odds = prop.overOdds ?? prop.underOdds ?? -110
 
             switch userSettings.riskTolerance {
             case .conservative:
-                // Logic: Odds -150 or better, Edge > 10%, Hit Rate 4/5+
                 return odds <= -150 && edgePct > 0.10 && hitRate >= 0.80
-                
             case .balanced:
-                // Logic: Standard odds (-110 to +110), Edge > 5%, Hit Rate 3/5+
                 return odds >= -110 && odds <= 110 && edgePct > 0.05 && hitRate >= 0.60
-                
             case .aggressive:
-                // Logic: Plus-money accepted, strong edge/matchup
-                return true // Aggressive shows all, including high-payout variance picks
+                return true
             }
         }
     }
 
-    // MARK: - Data Initialization
+    /// Top picks: first N props by ranking
+    var topPicks: [PlayerCardData] {
+        Array(filteredProps.prefix(userSettings.propsPerSection))
+    }
+
+    /// For You: top 4 props from games starting soonest (implicit time-of-day context)
+    var forYouProps: [PlayerCardData] {
+        let now = Date()
+        // Sort by game time proximity (soonest first), then by ranking score
+        let sorted = filteredProps
+            .sorted { a, b in
+                let aTime = parseGameTime(a.gameTimeUTC) ?? .distantFuture
+                let bTime = parseGameTime(b.gameTimeUTC) ?? .distantFuture
+                // Only consider games that haven't started yet
+                let aRelevant = aTime > now ? aTime : .distantFuture
+                let bRelevant = bTime > now ? bTime : .distantFuture
+                if aRelevant != bRelevant {
+                    return aRelevant < bRelevant
+                }
+                return (a.rankingScore ?? 0) > (b.rankingScore ?? 0)
+            }
+        return Array(sorted.prefix(4))
+    }
+
+    private func parseGameTime(_ isoString: String?) -> Date? {
+        guard let str = isoString else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: str) ?? ISO8601DateFormatter().date(from: str)
+    }
+
+    // MARK: - Data Loading
 
     func loadInitialData() async {
         isLoading = true
@@ -106,16 +125,10 @@ class DataViewModel: ObservableObject {
 
         do {
             async let fetchedGames = service.fetchGames()
-            async let fetchedTopPicks = service.fetchLiveProps()
-            async let fetchedForYou = service.fetchForYouProps()
-            async let fetchedAll = service.fetchAllProps()
+            async let fetchedProps = service.fetchAllProps()
 
             self.games = try await fetchedGames
-            self.featuredProps = try await fetchedTopPicks
-            self.forYouProps = try await fetchedForYou
-            self.allProps = try await fetchedAll
-            
-            self.updateSections()
+            self.allProps = try await fetchedProps
         } catch {
             self.errorMessage = "Failed to load data: \(error.localizedDescription)"
         }
@@ -128,29 +141,8 @@ class DataViewModel: ObservableObject {
             startCountdownTimer()
         }
     }
-    
-    private func updateSections() {
-        // Populates home sections based on filtered rankings and display limits
-        self.featuredProps = Array(filteredFeaturedProps.prefix(userSettings.propsPerSection))
-        
-        // Betting Style affects parlay section visibility
-        if userSettings.bettingStyle == .singles {
-            self.forYouProps = []
-        } else {
-            self.forYouProps = Array(filteredFeaturedProps.prefix(5))
-        }
-    }
 
-    // MARK: - State Management & Persistence
-
-    func logInteraction(for player: PlayerCardData) {
-        userSettings.interactionHistory[player.name, default: 0] += 1
-        saveSettingsLocally()
-        
-        // Refresh sections to apply behavioral boost immediately
-        self.updateSections()
-        objectWillChange.send() 
-    }
+    // MARK: - Settings Persistence
 
     func saveSettingsLocally() {
         if let encoded = try? JSONEncoder().encode(userSettings) {
@@ -165,51 +157,36 @@ class DataViewModel: ObservableObject {
         }
     }
 
-    func trackProp(_ player: PlayerCardData, stat: PlayerProp, direction: String) {
-        let newProp = TrackedProp(id: stat.id, playerName: player.name, statName: stat.statName, line: stat.line, type: direction, date: Date())
-        userSettings.trackedHistory.append(newProp)
-        saveSettingsLocally()
-    }
-
     // MARK: - Real-time Refresh Listener
 
-    /// Listen for backend refresh completions via Firestore metadata doc
     func startRefreshListener() {
-        guard let firebaseService = service as? FirebaseService else {
-            // Mock service — fall back to timer-based refresh
-            return
-        }
+        guard let firebaseService = service as? FirebaseService else { return }
 
         firebaseService.listenForRefresh { [weak self] metadata in
             Task { @MainActor in
                 guard let self else { return }
 
-                // Ignore the initial snapshot (before any real refresh happens)
                 if self.lastRefreshDate == nil {
                     self.lastRefreshDate = metadata.completedAt
                     self.updateCountdown()
                     return
                 }
 
-                // Only react if this is a NEW refresh (timestamp changed)
                 guard metadata.completedAt > self.lastRefreshDate! else { return }
                 self.lastRefreshDate = metadata.completedAt
 
-                // Show refreshing state and re-fetch data
                 self.isRefreshing = true
                 self.refreshComplete = false
                 self.refreshStatusText = "Refreshing..."
 
                 await self.reloadProps()
 
-                // Show completion
                 self.isRefreshing = false
                 self.refreshComplete = true
                 let df = DateFormatter()
                 df.dateFormat = "h:mm a"
                 self.refreshStatusText = "Updated at \(df.string(from: metadata.completedAt)) — \(metadata.propsWritten) props"
 
-                // After 15 seconds, switch back to countdown
                 self.completeDismissTask?.cancel()
                 self.completeDismissTask = Task {
                     try? await Task.sleep(nanoseconds: 15_000_000_000)
@@ -222,20 +199,9 @@ class DataViewModel: ObservableObject {
         }
     }
 
-    /// Re-fetch props without showing full loading state
     private func reloadProps() async {
         do {
-            async let fetchedTopPicks = service.fetchLiveProps()
-            async let fetchedForYou = service.fetchForYouProps()
-
-            self.featuredProps = try await fetchedTopPicks
-            self.forYouProps = try await fetchedForYou
-
-            // Also refresh allProps if they were previously loaded (for search)
-            if !allProps.isEmpty {
-                self.allProps = try await service.fetchAllProps()
-            }
-            self.updateSections()
+            self.allProps = try await service.fetchAllProps()
         } catch {
             print("Failed to reload props: \(error)")
         }
@@ -243,7 +209,6 @@ class DataViewModel: ObservableObject {
 
     // MARK: - Countdown Timer
 
-    /// Update the countdown text every 30 seconds
     func startCountdownTimer() {
         refreshTimer?.cancel()
         updateCountdown()
@@ -257,7 +222,6 @@ class DataViewModel: ObservableObject {
             }
     }
 
-    /// Compute countdown text based on scheduler schedule (hourly)
     func updateCountdown() {
         guard !isRefreshing, !refreshComplete else { return }
 
@@ -270,13 +234,11 @@ class DataViewModel: ObservableObject {
         let hour = calendar.component(.hour, from: now)
         let minute = calendar.component(.minute, from: now)
 
-        // Outside schedule (2 AM - 5 AM PT)
         if hour >= 2 && hour < 6 {
             refreshStatusText = "Next refresh: 6:00 AM PT"
             return
         }
 
-        // Show time since last refresh if we have it
         if let lastRefresh = lastRefreshDate {
             let df = DateFormatter()
             df.dateFormat = "h:mm a"
@@ -288,22 +250,8 @@ class DataViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Search Data
+    // MARK: - Search
 
-    /// Load all props for search functionality
-    func loadAllProps() async {
-        guard allProps.isEmpty else { return }
-
-        isSearchLoading = true
-        do {
-            self.allProps = try await service.fetchAllProps()
-        } catch {
-            print("Failed to load all props: \(error)")
-        }
-        isSearchLoading = false
-    }
-
-    /// Get unique players from all props
     var uniquePlayers: [PlayerInfo] {
         var seen = Set<String>()
         var players: [PlayerInfo] = []
@@ -324,63 +272,41 @@ class DataViewModel: ObservableObject {
         return players.sorted { $0.name < $1.name }
     }
 
-    /// Get unique teams from all props
     var uniqueTeams: [TeamInfo] {
         var teamDict: [String: TeamInfo] = [:]
+        var playersByTeam: [String: Set<String>] = [:]
 
         for prop in allProps {
             let abbr = prop.teamAbbr
             if !abbr.isEmpty && teamDict[abbr] == nil {
-                teamDict[abbr] = TeamInfo(
-                    abbreviation: abbr,
-                    playerCount: 0
-                )
+                teamDict[abbr] = TeamInfo(abbreviation: abbr, playerCount: 0)
             }
-            if var team = teamDict[abbr] {
-                team.playerCount += 1
-                teamDict[abbr] = team
-            }
-        }
-
-        // Count unique players per team
-        var playersByTeam: [String: Set<String>] = [:]
-        for prop in allProps {
-            let abbr = prop.teamAbbr
             let playerId = prop.player_id ?? prop.id
-            if playersByTeam[abbr] == nil {
-                playersByTeam[abbr] = Set<String>()
-            }
+            if playersByTeam[abbr] == nil { playersByTeam[abbr] = Set() }
             playersByTeam[abbr]?.insert(playerId)
         }
 
         return teamDict.values.map { team in
-            TeamInfo(
-                abbreviation: team.abbreviation,
-                playerCount: playersByTeam[team.abbreviation]?.count ?? 0
-            )
+            TeamInfo(abbreviation: team.abbreviation, playerCount: playersByTeam[team.abbreviation]?.count ?? 0)
         }.sorted { $0.abbreviation < $1.abbreviation }
     }
 
-    /// Search players by name
     func searchPlayers(query: String) -> [PlayerInfo] {
         guard !query.isEmpty else { return uniquePlayers }
         let lowercased = query.lowercased()
         return uniquePlayers.filter { $0.name.lowercased().contains(lowercased) }
     }
 
-    /// Search teams by abbreviation
     func searchTeams(query: String) -> [TeamInfo] {
         guard !query.isEmpty else { return uniqueTeams }
         let lowercased = query.lowercased()
         return uniqueTeams.filter { $0.abbreviation.lowercased().contains(lowercased) }
     }
 
-    /// Get all props for a specific player
     func propsForPlayer(playerId: String) -> [PlayerCardData] {
         return allProps.filter { ($0.player_id ?? $0.id) == playerId }
     }
 
-    /// Get all players for a specific team
     func playersForTeam(teamAbbr: String) -> [PlayerInfo] {
         var seen = Set<String>()
         var players: [PlayerInfo] = []
@@ -406,7 +332,6 @@ class DataViewModel: ObservableObject {
             searchResults = []
             return
         }
-
         Task {
             do {
                 self.searchResults = try await service.searchPlayers(query: query)
