@@ -76,6 +76,8 @@ class DataViewModel: ObservableObject {
             let odds = prop.overOdds ?? prop.underOdds ?? -110
 
             switch userSettings.riskTolerance {
+            case .noPreference:
+                return true
             case .conservative:
                 return odds <= -150 && edgePct > 0.10 && hitRate >= 0.80
             case .balanced:
@@ -152,8 +154,22 @@ class DataViewModel: ObservableObject {
 
     private func loadSettingsLocally() {
         if let data = UserDefaults.standard.data(forKey: "user_settings"),
-           let decoded = try? JSONDecoder().decode(UserSettings.self, from: data) {
+           var decoded = try? JSONDecoder().decode(UserSettings.self, from: data) {
+            // Migrate old stat filter names to match Underdog API names
+            let migrations: [String: String] = [
+                "Pts + Rebs": "Points + Rebounds",
+                "Pts + Asts": "Points + Assists",
+                "Rebs + Asts": "Rebounds + Assists",
+            ]
+            var migrated = false
+            for (old, new) in migrations {
+                if let idx = decoded.focusedStats.firstIndex(of: old) {
+                    decoded.focusedStats[idx] = new
+                    migrated = true
+                }
+            }
             self.userSettings = decoded
+            if migrated { saveSettingsLocally() }
         }
     }
 

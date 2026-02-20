@@ -308,7 +308,7 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
         # Prioritize main stats first
         priority_stats = ["Points", "Rebounds", "Assists",
                           "3-Pointers Made", "Pts + Rebs + Asts",
-                          "Pts + Rebs", "Pts + Asts", "Rebs + Asts"]
+                          "Points + Rebounds", "Points + Assists", "Rebounds + Assists"]
 
         # Sort props by priority
         def prop_priority(p):
@@ -330,9 +330,9 @@ def format_for_firebase(underdog_data: dict, espn_games: list) -> list:
             # Shorten stat names (check multi-stat combos before singles)
             short_name = stat_name
             short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
-            short_name = short_name.replace("Pts + Rebs", "Pts+Reb")
-            short_name = short_name.replace("Pts + Asts", "Pts+Ast")
-            short_name = short_name.replace("Rebs + Asts", "Reb+Ast")
+            short_name = short_name.replace("Points + Rebounds", "Pts+Reb")
+            short_name = short_name.replace("Points + Assists", "Pts+Ast")
+            short_name = short_name.replace("Rebounds + Assists", "Reb+Ast")
             short_name = short_name.replace("Points", "Pts")
             short_name = short_name.replace("Rebounds", "Reb")
             short_name = short_name.replace("Assists", "Ast")

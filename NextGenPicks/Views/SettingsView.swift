@@ -4,6 +4,9 @@ struct SettingsView: View {
     @EnvironmentObject var vm: DataViewModel
     @Environment(\.dismiss) private var dismiss
 
+    // Local draft — changes only apply when "Done" is tapped
+    @State private var draft: UserSettings = .default
+
     private let nbaTeams = [
         "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN",
         "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM", "MIA",
@@ -25,7 +28,7 @@ struct SettingsView: View {
                                 Text("Risk Tolerance")
                                     .font(.caption)
                                     .foregroundStyle(.gray)
-                                Picker("Risk Tolerance", selection: $vm.userSettings.riskTolerance) {
+                                Picker("Risk Tolerance", selection: $draft.riskTolerance) {
                                     ForEach(RiskTolerance.allCases, id: \.self) { level in
                                         Text(level.rawValue).tag(level)
                                     }
@@ -45,14 +48,13 @@ struct SettingsView: View {
                                     GridItem(.adaptive(minimum: 60), spacing: 8)
                                 ], spacing: 8) {
                                     ForEach(nbaTeams, id: \.self) { team in
-                                        let isSelected = vm.userSettings.favoriteNBATeams.contains(team)
+                                        let isSelected = draft.favoriteNBATeams.contains(team)
                                         Button {
                                             if isSelected {
-                                                vm.userSettings.favoriteNBATeams.removeAll { $0 == team }
+                                                draft.favoriteNBATeams.removeAll { $0 == team }
                                             } else {
-                                                vm.userSettings.favoriteNBATeams.append(team)
+                                                draft.favoriteNBATeams.append(team)
                                             }
-                                            vm.saveSettingsLocally()
                                         } label: {
                                             Text(team)
                                                 .font(.caption)
@@ -80,14 +82,13 @@ struct SettingsView: View {
                                     .foregroundStyle(.gray)
 
                                 ForEach(StatFilter.allCases, id: \.self) { stat in
-                                    let isSelected = vm.userSettings.focusedStats.contains(stat.rawValue)
+                                    let isSelected = draft.focusedStats.contains(stat.rawValue)
                                     Button {
                                         if isSelected {
-                                            vm.userSettings.focusedStats.removeAll { $0 == stat.rawValue }
+                                            draft.focusedStats.removeAll { $0 == stat.rawValue }
                                         } else {
-                                            vm.userSettings.focusedStats.append(stat.rawValue)
+                                            draft.focusedStats.append(stat.rawValue)
                                         }
-                                        vm.saveSettingsLocally()
                                     } label: {
                                         HStack {
                                             Text(stat.rawValue)
@@ -106,14 +107,14 @@ struct SettingsView: View {
                         // MARK: - Filtering
                         settingsSection("Filtering") {
                             VStack(alignment: .leading, spacing: 16) {
-                                Toggle("Hide Fades", isOn: $vm.userSettings.hideFades)
+                                Toggle("Hide Fades", isOn: $draft.hideFades)
                                     .tint(Color.brandEmerald)
 
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("Minimum Ranking Score: \(String(format: "%.1f", vm.userSettings.minRankingScore))")
+                                    Text("Minimum Ranking Score: \(String(format: "%.1f", draft.minRankingScore))")
                                         .font(.caption)
                                         .foregroundStyle(.gray)
-                                    Slider(value: $vm.userSettings.minRankingScore, in: 0...10, step: 0.5)
+                                    Slider(value: $draft.minRankingScore, in: 0...10, step: 0.5)
                                         .tint(Color.brandEmerald)
                                 }
                             }
@@ -122,10 +123,10 @@ struct SettingsView: View {
                         // MARK: - Display
                         settingsSection("Display") {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Props Per Section: \(vm.userSettings.propsPerSection)")
+                                Text("Props Per Section: \(draft.propsPerSection)")
                                     .font(.caption)
                                     .foregroundStyle(.gray)
-                                Stepper("", value: $vm.userSettings.propsPerSection, in: 5...30, step: 5)
+                                Stepper("", value: $draft.propsPerSection, in: 5...30, step: 5)
                                     .labelsHidden()
                             }
                         }
@@ -138,16 +139,16 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
+                        vm.userSettings = draft
                         vm.saveSettingsLocally()
                         dismiss()
                     }
                     .foregroundStyle(Color.brandEmerald)
                 }
             }
-            .onChange(of: vm.userSettings.riskTolerance) { vm.saveSettingsLocally() }
-            .onChange(of: vm.userSettings.hideFades) { vm.saveSettingsLocally() }
-            .onChange(of: vm.userSettings.minRankingScore) { vm.saveSettingsLocally() }
-            .onChange(of: vm.userSettings.propsPerSection) { vm.saveSettingsLocally() }
+            .onAppear {
+                draft = vm.userSettings
+            }
         }
     }
 

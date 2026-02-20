@@ -1639,11 +1639,11 @@ def _resolve_stat_key(stat_name: str) -> str | None:
     if "pts + rebs + asts" in stat_lower or "pra" in stat_lower:
         return "pra"
     # Two-stat combos (check before singles — they contain single-stat substrings)
-    elif "pts + reb" in stat_lower:
+    elif "points + rebound" in stat_lower or "pts + reb" in stat_lower:
         return "pts_reb"
-    elif "pts + ast" in stat_lower:
+    elif "points + assist" in stat_lower or "pts + ast" in stat_lower:
         return "pts_ast"
-    elif "rebs + asts" in stat_lower or "reb + ast" in stat_lower:
+    elif "rebounds + assist" in stat_lower or "rebs + asts" in stat_lower or "reb + ast" in stat_lower:
         return "reb_ast"
     elif "3-pointer" in stat_lower or "3pm" in stat_lower:
         return "fg3m"
@@ -2307,7 +2307,7 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
     team_context_cache = {}
     priority_stats = ["Points", "Rebounds", "Assists",
                       "3-Pointers Made", "Pts + Rebs + Asts",
-                      "Pts + Rebs", "Pts + Asts", "Rebs + Asts"]
+                      "Points + Rebounds", "Points + Assists", "Rebounds + Assists"]
 
     for ep in enriched_players:
         ud_player = ep["underdog_player"]
@@ -2511,9 +2511,9 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
             # Format stat name (check multi-stat combos before singles)
             short_name = stat_name
             short_name = short_name.replace("Pts + Rebs + Asts", "PRA")
-            short_name = short_name.replace("Pts + Rebs", "Pts+Reb")
-            short_name = short_name.replace("Pts + Asts", "Pts+Ast")
-            short_name = short_name.replace("Rebs + Asts", "Reb+Ast")
+            short_name = short_name.replace("Points + Rebounds", "Pts+Reb")
+            short_name = short_name.replace("Points + Assists", "Pts+Ast")
+            short_name = short_name.replace("Rebounds + Assists", "Reb+Ast")
             short_name = short_name.replace(
                 "Points", "Pts").replace("Rebounds", "Reb")
             short_name = short_name.replace(

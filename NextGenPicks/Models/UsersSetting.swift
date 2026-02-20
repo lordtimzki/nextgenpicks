@@ -2,6 +2,7 @@ import Foundation
 
 // MARK: - Enums
 enum RiskTolerance: String, Codable, CaseIterable {
+    case noPreference = "No Preference"
     case conservative = "Conservative"
     case balanced = "Balanced"
     case aggressive = "Aggressive"
@@ -14,15 +15,15 @@ enum StatFilter: String, Codable, CaseIterable {
     case assists = "Assists"
     case threePointers = "3-Pointers Made"
     case pra = "Pts + Rebs + Asts"
-    case ptsReb = "Pts + Rebs"
-    case ptsAst = "Pts + Asts"
-    case rebAst = "Rebs + Asts"
+    case ptsReb = "Points + Rebounds"
+    case ptsAst = "Points + Assists"
+    case rebAst = "Rebounds + Assists"
 }
 
 // MARK: - Models
 struct UserSettings: Codable {
     // --- 1. RISK TOLERANCE (Explicit Context) ---
-    var riskTolerance: RiskTolerance = .aggressive
+    var riskTolerance: RiskTolerance = .noPreference
 
     // --- 2. FILTERING (Explicit Context) ---
     var favoriteNBATeams: [String] = []
