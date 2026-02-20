@@ -6,6 +6,9 @@ import datetime
 # Initialize Firebase Admin for Firestore access
 initialize_app()
 
+# Re-export batch_analyze and scheduled_refresh so Firebase discovers them
+from batch_analyze import batch_analyze, scheduled_refresh
+
 @https_fn.on_request(timeout_sec=60)
 def analyze_player(req: https_fn.Request) -> https_fn.Response:
     """

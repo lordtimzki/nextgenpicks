@@ -1504,15 +1504,16 @@ def get_player_stats_quick(player_name: str, bio_cache: dict = None) -> dict | N
 
         try:
             all_games_full = None
-            for attempt in range(3):
+            for attempt in range(2):
                 try:
                     log = playergamelog.PlayerGameLog(
-                        player_id=player_id, season='2025-26')
+                        player_id=player_id, season='2025-26',
+                        timeout=15)
                     all_games_full = log.get_normalized_dict()['PlayerGameLog']
                     break
                 except Exception:
-                    if attempt < 2:
-                        time.sleep(1.0 * (attempt + 1))
+                    if attempt < 1:
+                        time.sleep(1.5)
                     else:
                         raise
 
@@ -2089,6 +2090,11 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
             "name": player_name,
         }
 
+    # --- Circuit breaker: track consecutive failures to detect NBA API outages ---
+    consecutive_failures = 0
+    CIRCUIT_BREAKER_THRESHOLD = 6  # Trip after 6 straight failures
+    circuit_tripped = False
+
     # Enrich all players with NBA API (4 workers to avoid rate limiting)
     total_to_enrich = len(players_to_enrich)
     enrich_count = 0
@@ -2102,13 +2108,62 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 enrich_count += 1
                 has_stats = result.get(
                     "nba_stats") and result["nba_stats"].get("last5Games")
-                status = "✓" if has_stats else "○"
+                is_failed = result.get(
+                    "nba_stats") and result["nba_stats"].get("enrichment_failed", False)
+
+                if has_stats:
+                    status = "✓"
+                    consecutive_failures = 0  # Reset on success
+                elif is_failed:
+                    status = "○"
+                    consecutive_failures += 1
+                else:
+                    status = "○"
+                    # No NBA match (None nba_stats) — not an API failure
+
                 print(
                     f"  {status} Player {enrich_count}/{total_to_enrich}: {result['name']}")
+
+                # Circuit breaker: if too many consecutive API failures, cancel remaining
+                if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD and not circuit_tripped:
+                    circuit_tripped = True
+                    pending = [f for f in futures if not f.done()]
+                    for f in pending:
+                        f.cancel()
+                    print(f"\n  ⚡ CIRCUIT BREAKER: {consecutive_failures} consecutive NBA API "
+                          f"failures — cancelling {len(pending)} remaining enrichments. "
+                          f"Failed players will preserve existing Firestore data.")
+                    break
+
             except Exception as e:
                 enrich_count += 1
+                consecutive_failures += 1
                 print(
                     f"  ✗ Player {enrich_count}/{total_to_enrich}: Error - {e}")
+                if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD and not circuit_tripped:
+                    circuit_tripped = True
+                    pending = [f for f in futures if not f.done()]
+                    for f in pending:
+                        f.cancel()
+                    print(f"\n  ⚡ CIRCUIT BREAKER: {consecutive_failures} consecutive failures "
+                          f"— cancelling {len(pending)} remaining. "
+                          f"Failed players will preserve existing Firestore data.")
+                    break
+
+    # If circuit breaker tripped, mark remaining unenriched players as failed
+    if circuit_tripped:
+        enriched_ids = {ep.get("name") for ep in enriched_players}
+        for p in players_to_enrich:
+            pname = f"{p['player'].get('first_name', '')} {p['player'].get('last_name', '')}".strip()
+            if pname not in enriched_ids:
+                enriched_players.append({
+                    "underdog_player": p["player"],
+                    "underdog_props": p["props"],
+                    "underdog_game": p.get("game", {}),
+                    "underdog_team_abbr": p.get("team_abbr", ""),
+                    "nba_stats": {"enrichment_failed": True, "id": p["player"].get("id")},
+                    "name": pname,
+                })
 
     print(
         f"\n📊 Processed {len(enriched_players)} total players\n")
