@@ -51,6 +51,18 @@ class DataViewModel: ObservableObject {
                 // Hide fades
                 if userSettings.hideFades && (prop.trending == .fade || prop.isFade == true) { return false }
 
+                // Hide line skepticism (dampener < 1.0 means skepticism fired)
+                if userSettings.hideLineSkepticism && (prop.lineDivergenceDampener ?? 1.0) < 1.0 { return false }
+
+                // Max hit rate filter (hide Vegas traps with suspiciously high hit rates)
+                if userSettings.maxHitRate < 1.0 {
+                    let total = prop.hitRate?.total ?? 0
+                    if total >= 5 {
+                        let pct = Double(prop.hitRate?.hits ?? 0) / Double(total)
+                        if pct >= userSettings.maxHitRate { return false }
+                    }
+                }
+
                 // Risk tolerance
                 let edgePct = (prop.edge ?? 0) / (prop.line ?? 1.0)
                 let hitRate = Double(prop.hitRate?.hits ?? 0) / Double(max(prop.hitRate?.total ?? 1, 1))

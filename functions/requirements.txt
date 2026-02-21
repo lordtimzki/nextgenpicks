@@ -4,3 +4,4 @@ nba_api
 python-dotenv
 httpx
 functions-framework
+gspread

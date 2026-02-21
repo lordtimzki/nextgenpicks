@@ -3,6 +3,7 @@ import SwiftUI
 struct FeedView: View {
     @EnvironmentObject var vm: DataViewModel
     @State private var showSearch = false
+    @State private var showForYouInfo = false
 
     let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -79,14 +80,26 @@ struct FeedView: View {
                             }
                             .padding(.horizontal)
 
-                            // 3. For You Section (time-of-day sorted, 4 props)
+                            // 3. For You Section (personalized picks)
                             if !vm.forYouProps.isEmpty {
                                 VStack(alignment: .leading, spacing: 12) {
-                                    Text("For You")
-                                        .font(.title3)
-                                        .fontWeight(.bold)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal)
+                                    HStack {
+                                        Text("For You")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+
+                                        Button {
+                                            showForYouInfo = true
+                                        } label: {
+                                            Image(systemName: "info.circle")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.gray)
+                                        }
+
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
 
                                     LazyVGrid(columns: columns, spacing: 12) {
                                         ForEach(vm.forYouProps) { prop in
@@ -132,6 +145,17 @@ struct FeedView: View {
         .sheet(isPresented: $vm.showSettings) {
             SettingsView()
                 .environmentObject(vm)
+        }
+        .alert("How For You Works", isPresented: $showForYouInfo) {
+            Button("Got it", role: .cancel) {}
+        } message: {
+            Text("Picks are personalized using your settings and live game context:\n\n"
+                 + "- Favorite teams get a boost\n"
+                 + "- Your focused stats are prioritized\n"
+                 + "- High-confidence picks (70%+ hit rate) rank higher\n"
+                 + "- Confirmed starters are preferred\n"
+                 + "- Upcoming games get a slight edge\n\n"
+                 + "One pick per player for variety.")
         }
     }
 }

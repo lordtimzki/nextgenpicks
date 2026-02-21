@@ -29,6 +29,8 @@ struct UserSettings: Codable {
     var favoriteNBATeams: [String] = []
     var focusedStats: [String] = StatFilter.allCases.map { $0.rawValue } // All selected by default
     var hideFades: Bool = false
+    var hideLineSkepticism: Bool = false
+    var maxHitRate: Double = 1.0  // 1.0 = no filter, 0.8 = hide 80%+ hit rates
     var minRankingScore: Double = 0.0
 
     // --- 3. DISPLAY ---

@@ -5,6 +5,7 @@ Uses ESPN for game schedules
 """
 
 from firebase_functions import https_fn, scheduler_fn
+from firebase_functions.params import SecretParam
 from firebase_admin import firestore
 import httpx
 import json
@@ -16,6 +17,99 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from retrieve import get_all_team_defense_stats, get_all_player_advanced_stats, get_all_player_bio_stats, get_all_team_opponent_stats, get_dvp_stats
 
 # Note: Firebase is initialized in main.py which imports this module
+
+# Google Sheets secret — stores the service account JSON for Sheets API
+GSHEETS_SA_KEY = SecretParam("GSHEETS_SA_KEY")
+
+# Google Sheet ID — the long ID from the spreadsheet URL
+GSHEET_ID = SecretParam("GSHEET_ID")
+
+
+# ============================================================
+# GOOGLE SHEETS EXPORT
+# ============================================================
+
+def _export_top10_to_sheets(prop_cards: list) -> None:
+    """
+    Append today's top 10 filtered props to a Google Sheet.
+    Tim Filters: score > 5.0, no line skepticism, no 100% hit rate (Vegas traps).
+    Schedule: 3 PM PT weekdays, 12 PM PT weekends.
+    """
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    try:
+        sa_json = GSHEETS_SA_KEY.value
+        sheet_id = GSHEET_ID.value
+
+        if not sa_json or not sheet_id:
+            print("⚠️ Google Sheets export skipped — secrets not configured")
+            return
+
+        # Tim Filters: no Vegas traps, no line skepticism, score > 5.0
+        filtered = [
+            c for c in prop_cards
+            if c.get("rankingScore", 0) > 5.0
+            and c.get("lineDivergenceDampener", 1.0) >= 1.0
+            and (
+                c.get("hitRate", {}).get("total", 0) < 5
+                or (c.get("hitRate", {}).get("hits", 0)
+                    / max(c.get("hitRate", {}).get("total", 1), 1)) < 1.0
+            )
+        ]
+
+        creds_dict = json.loads(sa_json)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(sheet_id)
+
+        # Use first worksheet
+        ws = sh.sheet1
+
+        # Add header if sheet is empty
+        if ws.row_count == 0 or not ws.get("A1"):
+            ws.append_row([
+                "Date", "Rank", "Player", "Team", "Stat", "Line",
+                "Direction", "Score", "Edge", "Hit%", "Over Odds",
+                "Under Odds", "Opponent", "Trending", "Actual", "W/L",
+            ])
+
+        today = datetime.datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%m/%d/%Y")
+
+        rows = []
+        for i, card in enumerate(filtered[:10], start=1):
+            hit_data = card.get("hitRate", {})
+            weighted_pct = hit_data.get("weightedPct", 0)
+
+            rows.append([
+                today,
+                i,
+                card.get("name", ""),
+                card.get("teamAbbr", ""),
+                card.get("statName", ""),
+                card.get("line", 0),
+                card.get("recommendedDirection", ""),
+                round(card.get("rankingScore", 0), 2),
+                round(card.get("edge", 0), 2),
+                f"{round(weighted_pct * 100)}%",
+                card.get("overOdds", ""),
+                card.get("underOdds", ""),
+                card.get("opponent", ""),
+                card.get("trending", "up"),
+            ])
+
+        # Blank separator row before today's batch
+        ws.append_row([])
+        ws.append_rows(rows)
+
+        print(f"📊 Google Sheets: Exported {len(rows)} Tim Filters props for {today}")
+
+    except Exception as e:
+        # Non-fatal — don't crash the pipeline over a Sheets export failure
+        print(f"⚠️ Google Sheets export failed: {e}")
 
 
 # ============================================================
@@ -2625,9 +2719,6 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
                 "restDays": rest_days_val,
                 "sampleSizeConfidence": round(sample_conf, 2),
                 "gamesPlayed": len(game_log),
-                # Will be set after sorting
-                "section": "topPicks",
-                "featured": False,
                 # HOT/FADE badge status (computed from trend + score + hit rate)
                 "trending": trending_status,
                 "isFade": trending_status == "fade",
@@ -2650,44 +2741,12 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
 
     print(f"📊 Created {len(all_prop_cards)} individual prop cards")
 
-    # 10. Sort and categorize props (with player deduplication)
+    # 10. Sort props by ranking score
     all_prop_cards.sort(key=lambda x: x.get("rankingScore", 0), reverse=True)
-
-    # --- Player Deduplication for forYou & topPicks ---
-    # For parlay builders: each player should appear at most once in the
-    # featured sections.  Pick each player's best-scored prop, skip the rest
-    # into allProps.  This prevents "LeBron Pts, LeBron PRA, LeBron Pts+Reb"
-    # filling the entire forYou section.
-    seen_players_for_you = set()
-    seen_players_top = set()
-    for_you_cards = []
-    top_picks_cards = []
-    remaining_cards = []
-
-    for card in all_prop_cards:
-        pid = card.get("player_id", card.get("name", ""))
-        if len(for_you_cards) < 5 and pid not in seen_players_for_you:
-            card["section"] = "forYou"
-            card["featured"] = True
-            for_you_cards.append(card)
-            seen_players_for_you.add(pid)
-        elif len(top_picks_cards) < 15 and pid not in seen_players_top:
-            card["section"] = "topPicks"
-            card["featured"] = True
-            top_picks_cards.append(card)
-            seen_players_top.add(pid)
-        else:
-            card["section"] = "allProps"
-            card["featured"] = False
-            remaining_cards.append(card)
-
-    for_you_count = len(for_you_cards)
-    top_picks_count = len(top_picks_cards)
 
     # Count trending badges
     hot_count = sum(1 for c in all_prop_cards if c["trending"] == "hot")
     fade_count = sum(1 for c in all_prop_cards if c["trending"] == "fade")
-    print(f"✓ Categorized: {for_you_count} forYou, {top_picks_count} topPicks")
     print(f"🔥 HOT badges: {hot_count}, ⚠️ FADE badges: {fade_count}")
 
     # 11. Selective replace: write new props and only delete stale ones (batched)
@@ -2754,8 +2813,6 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
     db.collection("metadata").document("lastRefresh").set({
         "completedAt": firestore.SERVER_TIMESTAMP,
         "propsWritten": written_count,
-        "topPicks": top_picks_count,
-        "forYou": for_you_count,
         "hotProps": hot_count,
         "fadeProps": fade_count,
         "source": source,
@@ -2763,9 +2820,8 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
 
     return {
         "props_written": written_count,
-        "top_picks": top_picks_count,
-        "for_you": for_you_count,
         "espn_games_today": len(espn_games),
+        "_prop_cards": all_prop_cards,
     }
 
 
@@ -2773,11 +2829,12 @@ def _run_analysis_pipeline(source: str, max_enrich: int = 0) -> dict | None:
 # HTTP FUNCTION - Manually triggered via HTTP request
 # ============================================================
 
-@https_fn.on_request(timeout_sec=540, memory=2048)
+@https_fn.on_request(timeout_sec=540, memory=2048, secrets=[GSHEETS_SA_KEY, GSHEET_ID])
 def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     """
     Fetch NBA player props from Underdog Fantasy and rank with data-driven scoring.
     Uses ESPN for schedule data and nba_api for player stats enrichment.
+    Add ?sheets=true to also export to Google Sheets.
     """
     result = _run_analysis_pipeline(source="batch_analyze", max_enrich=80)
 
@@ -2788,15 +2845,23 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
             "note": "This may happen if no NBA games are scheduled today"
         }), status=404, mimetype='application/json')
 
-    return https_fn.Response(json.dumps({
+    # Optional: trigger sheets export via ?sheets=true
+    sheets_exported = False
+    if req.args.get("sheets") == "true" and result.get("_prop_cards"):
+        _export_top10_to_sheets(result["_prop_cards"])
+        sheets_exported = True
+
+    response = {
         "status": "success",
         "message": f"Created {result['props_written']} individual prop cards",
         "props_written": result["props_written"],
-        "top_picks": result["top_picks"],
-        "for_you": result["for_you"],
         "source": "underdog_fantasy",
-        "espn_games_today": result["espn_games_today"]
-    }), mimetype='application/json')
+        "espn_games_today": result["espn_games_today"],
+    }
+    if sheets_exported:
+        response["sheets_exported"] = True
+
+    return https_fn.Response(json.dumps(response), mimetype='application/json')
 
 
 # ============================================================
@@ -2808,10 +2873,20 @@ def batch_analyze(req: https_fn.Request) -> https_fn.Response:
     timezone=scheduler_fn.Timezone("America/Los_Angeles"),
     timeout_sec=540,
     memory=2048,
+    secrets=[GSHEETS_SA_KEY, GSHEET_ID],
 )
 def scheduled_refresh(event: scheduler_fn.ScheduledEvent) -> None:
     """
     Automatically refresh all player props hourly.
     Enriches all players (no cap) with NBA stats.
+    Exports to Google Sheets: 3 PM PT weekdays, 12 PM PT weekends.
     """
-    _run_analysis_pipeline(source="scheduled_refresh", max_enrich=80)
+    result = _run_analysis_pipeline(source="scheduled_refresh", max_enrich=80)
+
+    # Export to Google Sheets — 3 PM PT weekdays, 12 PM PT weekends
+    if result:
+        now_pacific = datetime.datetime.now(ZoneInfo("America/Los_Angeles"))
+        is_weekend = now_pacific.weekday() >= 5  # 5=Sat, 6=Sun
+        export_hour = 12 if is_weekend else 15
+        if now_pacific.hour == export_hour:
+            _export_top10_to_sheets(result["_prop_cards"])

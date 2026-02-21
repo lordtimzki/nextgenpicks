@@ -110,6 +110,23 @@ struct SettingsView: View {
                                 Toggle("Hide Fades", isOn: $draft.hideFades)
                                     .tint(Color.brandEmerald)
 
+                                Toggle("Hide Line Skepticism", isOn: $draft.hideLineSkepticism)
+                                    .tint(Color.brandEmerald)
+                                Text("Remove props where the line is set far above the player's average (books pricing in role changes)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.gray)
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Max Hit Rate: \(draft.maxHitRate >= 1.0 ? "Off" : "\(Int(draft.maxHitRate * 100))%")")
+                                        .font(.caption)
+                                        .foregroundStyle(.gray)
+                                    Slider(value: $draft.maxHitRate, in: 0.5...1.0, step: 0.1)
+                                        .tint(Color.brandEmerald)
+                                    Text("Filter out \"Vegas trap\" picks with suspiciously high hit rates (e.g. 5/5)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.gray)
+                                }
+
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Minimum Ranking Score: \(String(format: "%.1f", draft.minRankingScore))")
                                         .font(.caption)
