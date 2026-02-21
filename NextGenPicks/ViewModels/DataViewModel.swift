@@ -54,12 +54,12 @@ class DataViewModel: ObservableObject {
                 // Hide line skepticism (dampener < 1.0 means skepticism fired)
                 if userSettings.hideLineSkepticism && (prop.lineDivergenceDampener ?? 1.0) < 1.0 { return false }
 
-                // Max hit rate filter (hide Vegas traps with suspiciously high hit rates)
-                if userSettings.maxHitRate < 1.0 {
-                    let total = prop.hitRate?.total ?? 0
-                    if total >= 5 {
-                        let pct = Double(prop.hitRate?.hits ?? 0) / Double(total)
-                        if pct >= userSettings.maxHitRate { return false }
+                // Max last-5 hits filter (hide Vegas traps)
+                if userSettings.maxLast5Hits < 5 {
+                    let last5 = Array((prop.hitRate?.results ?? []).prefix(5))
+                    if last5.count >= 5 {
+                        let last5Hits = last5.filter { $0.hit }.count
+                        if last5Hits > userSettings.maxLast5Hits { return false }
                     }
                 }
 

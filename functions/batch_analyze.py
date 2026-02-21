@@ -46,17 +46,20 @@ def _export_top10_to_sheets(prop_cards: list) -> None:
             print("⚠️ Google Sheets export skipped — secrets not configured")
             return
 
-        # Tim Filters: no Vegas traps, no line skepticism, score > 5.0
-        filtered = [
-            c for c in prop_cards
-            if c.get("rankingScore", 0) > 5.0
-            and c.get("lineDivergenceDampener", 1.0) >= 1.0
-            and (
-                c.get("hitRate", {}).get("total", 0) < 5
-                or (c.get("hitRate", {}).get("hits", 0)
-                    / max(c.get("hitRate", {}).get("total", 1), 1)) < 1.0
-            )
-        ]
+        # Tim Filters: no Vegas traps (last 5), no line skepticism, score > 5.0
+        def _passes_tim_filters(c):
+            if c.get("rankingScore", 0) <= 5.0:
+                return False
+            if c.get("lineDivergenceDampener", 1.0) < 1.0:
+                return False
+            # Check last 5 games for 100% hit rate (Vegas trap)
+            results = c.get("hitRate", {}).get("results", [])
+            last5 = results[:5]
+            if len(last5) >= 5 and all(g.get("hit") for g in last5):
+                return False
+            return True
+
+        filtered = [c for c in prop_cards if _passes_tim_filters(c)]
 
         creds_dict = json.loads(sa_json)
         creds = Credentials.from_service_account_info(

@@ -117,12 +117,18 @@ struct SettingsView: View {
                                     .foregroundStyle(.gray)
 
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("Max Hit Rate: \(draft.maxHitRate >= 1.0 ? "Off" : "\(Int(draft.maxHitRate * 100))%")")
+                                    Text("Max Hits (Last 5): \(draft.maxLast5Hits >= 5 ? "Off" : "\(draft.maxLast5Hits)/5")")
                                         .font(.caption)
                                         .foregroundStyle(.gray)
-                                    Slider(value: $draft.maxHitRate, in: 0.5...1.0, step: 0.1)
-                                        .tint(Color.brandEmerald)
-                                    Text("Filter out \"Vegas trap\" picks with suspiciously high hit rates (e.g. 5/5)")
+                                    Slider(
+                                        value: Binding(
+                                            get: { Double(draft.maxLast5Hits) },
+                                            set: { draft.maxLast5Hits = Int($0) }
+                                        ),
+                                        in: 1...5, step: 1
+                                    )
+                                    .tint(Color.brandEmerald)
+                                    Text("Hide props that hit more than this in the last 5 games (avoids Vegas traps)")
                                         .font(.caption2)
                                         .foregroundStyle(.gray)
                                 }
