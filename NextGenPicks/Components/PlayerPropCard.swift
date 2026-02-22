@@ -945,7 +945,7 @@ struct RankingBreakdownSheet: View {
             icon: "chart.bar.fill",
             label: "Efficiency",
             weight: "10%",
-            score: player.efficiencyScore ?? 5.0,
+            score: player.recommendedDirection == "Under" ? 10.0 - (player.efficiencyScore ?? 5.0) : player.efficiencyScore ?? 5.0,
             color: .brandPurple,
             details: efficiencyDetails
         )

@@ -52,11 +52,14 @@ def _export_top10_to_sheets(prop_cards: list) -> None:
                 return False
             if c.get("lineDivergenceDampener", 1.0) < 1.0:
                 return False
-            # Check last 5 games for 100% hit rate (Vegas trap)
+            # Check last 5 games for 100% hit rate in EITHER direction (Vegas trap)
             results = c.get("hitRate", {}).get("results", [])
             last5 = results[:5]
-            if len(last5) >= 5 and all(g.get("hit") for g in last5):
-                return False
+            if len(last5) >= 5:
+                if all(g.get("hit") for g in last5):      # 5/5 Over
+                    return False
+                if all(not g.get("hit") for g in last5):   # 5/5 Under
+                    return False
             return True
 
         filtered = [c for c in prop_cards if _passes_tim_filters(c)]
