@@ -24,5 +24,6 @@ Repository is public for portfolio purposes and not for public use.
 Quite literally only works for NBA and is not scaled for any other sport. 
 
 ### Citations:
-functions/batch_analyze.py & functions/retrieve.py & functions/underdog_scraper were AI-Assisted using Claude Code. <br>
+functions/batch_analyze.py & functions/retrieve.py & functions/underdog_scraper were heavily AI-Assisted using Claude Code. <br>
+Most swift files as a backbone were created by me, but were also AI-Assisted for specific features.
 UI designed by me, (lordtimzki).
