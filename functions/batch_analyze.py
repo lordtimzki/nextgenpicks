@@ -63,7 +63,23 @@ def _export_top10_to_sheets(prop_cards: list) -> None:
                     return False
             return True
 
-        filtered = [c for c in prop_cards if _passes_tim_filters(c)]
+        # Only include props for TODAY's games (Pacific time)
+        today_pacific = datetime.datetime.now(
+            ZoneInfo("America/Los_Angeles")).date()
+
+        def _is_today(c):
+            utc_str = c.get("gameTimeUTC", "")
+            if not utc_str:
+                return True  # Include if no game time (shouldn't happen)
+            try:
+                game_dt = datetime.datetime.fromisoformat(
+                    utc_str.replace("Z", "+00:00"))
+                return game_dt.astimezone(
+                    ZoneInfo("America/Los_Angeles")).date() == today_pacific
+            except Exception:
+                return True
+
+        filtered = [c for c in prop_cards if _passes_tim_filters(c) and _is_today(c)]
 
         creds_dict = json.loads(sa_json)
         creds = Credentials.from_service_account_info(
