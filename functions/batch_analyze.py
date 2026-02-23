@@ -31,7 +31,8 @@ GSHEET_ID = SecretParam("GSHEET_ID")
 
 def _export_top10_to_sheets(prop_cards: list) -> None:
     """
-    Append today's top 10 filtered props to a Google Sheet.
+    Append today's top 15 filtered props to a Google Sheet.
+    First 10 are starters, last 5 are backups for manual swaps.
     Tim Filters: score > 5.0, no line skepticism, no 100% hit rate (Vegas traps).
     Schedule: 3 PM PT weekdays, 12 PM PT weekends.
     """
@@ -86,9 +87,13 @@ def _export_top10_to_sheets(prop_cards: list) -> None:
         today = datetime.datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%m/%d/%Y")
 
         rows = []
-        for i, card in enumerate(filtered[:10], start=1):
+        for i, card in enumerate(filtered[:15], start=1):
             hit_data = card.get("hitRate", {})
             weighted_pct = hit_data.get("weightedPct", 0)
+
+            # Separator between starters (10) and backups (5)
+            if i == 11:
+                rows.append(["", "", "--- BACKUPS ---", "", "", "", "", "", "", "", "", "", "", ""])
 
             rows.append([
                 today,
@@ -510,8 +515,8 @@ def _resolve_dvp_stat_rank(stat_name: str, dvp_entry: dict) -> int | None:
     Given a DvP cache entry for a (team, position), resolve the
     stat-specific opponent rank. Same logic as _resolve_opponent_stat_rank
     but operates on a DvP-filtered entry.
-    Returns raw OPP_*_RANK (1=most allowed/worst D, 30=least/best D).
-    Callers must invert (31-rank) before use in matchup scoring.
+    Returns raw OPP_*_RANK (1=least allowed/best D, 30=most allowed/worst D).
+    No inversion needed — ranks match calculate_matchup_score convention.
     """
     if not dvp_entry:
         return None
@@ -701,19 +706,17 @@ def calculate_prop_ranking_score(prop: dict, averages: dict, game_time_utc: str,
     odds_score = _odds_tier_score(relevant_odds)
 
     # 6. Matchup Score — prefer real DvP rank (position-filtered), fall back to team-wide
-    # dvp_rank / opp_stat_rank use OPP_*_RANK convention: 1=most allowed (worst D), 30=least (best D)
-    # calculate_matchup_score expects DEF_RATING convention: 1=best D, 30=worst D
-    # Invert OPP ranks to match: 31 - rank
-    inv_dvp = (31 - dvp_rank) if dvp_rank is not None else None
-    inv_opp_stat = (31 - opp_stat_rank) if opp_stat_rank is not None else None
-    matchup_stat_rank = inv_dvp if inv_dvp is not None else inv_opp_stat
+    # OPP_*_RANK convention: 1=least allowed (best D), 30=most allowed (worst D)
+    # calculate_matchup_score expects same convention: high rank = weak D = good for Over
+    # No inversion needed — OPP ranks already match
+    matchup_stat_rank = dvp_rank if dvp_rank is not None else opp_stat_rank
     matchup_score = calculate_matchup_score(
         opp_def_rank, opp_pace_rank, recommended_direction, opp_stat_rank=matchup_stat_rank)
 
     # Boost matchup weight if extreme outlier (redistribute from edge to keep sum = 1.0)
-    # Use inverted DvP rank first, then inverted team-wide stat rank, then generic def rank
-    effective_def_rank = inv_dvp if inv_dvp is not None else (
-        inv_opp_stat if inv_opp_stat is not None else opp_def_rank)
+    # Use DvP rank first, then team-wide stat rank, then generic def rank
+    effective_def_rank = dvp_rank if dvp_rank is not None else (
+        opp_stat_rank if opp_stat_rank is not None else opp_def_rank)
     matchup_weight = 0.25
     edge_weight = 0.40
     if (effective_def_rank and effective_def_rank >= 28 and recommended_direction == "Over") or \
@@ -1772,8 +1775,8 @@ def _game_stat_value(game: dict, stat_key: str) -> float:
 def _resolve_opponent_stat_rank(stat_name: str, opp_stats: dict) -> int | None:
     """
     Map a stat name to the stat-specific opponent rank.
-    Returns raw OPP_*_RANK (1=most allowed/worst D, 30=least allowed/best D).
-    Callers must invert (31-rank) before use in matchup scoring.
+    Returns raw OPP_*_RANK (1=least allowed/best D, 30=most allowed/worst D).
+    No inversion needed — ranks match calculate_matchup_score convention.
     """
     if not opp_stats:
         return None

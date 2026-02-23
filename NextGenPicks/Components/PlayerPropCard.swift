@@ -851,29 +851,29 @@ struct RankingBreakdownSheet: View {
     }
 
     private func dvpScoreValue(rank: Int) -> Double {
-        // OPP_*_RANK convention: rank 1 = most allowed (worst D), rank 30 = best D
-        // Over: worst D (rank 1) = best for Over → high score
-        // Under: best D (rank 30) = best for Under → high score
+        // OPP_*_RANK convention: rank 1 = least allowed (best D), rank 30 = most allowed (worst D)
+        // Over: worst D (rank 30) = best for Over → high score
+        // Under: best D (rank 1) = best for Under → high score
         let direction = player.recommendedDirection ?? "Over"
         if direction == "Over" {
-            return Double(31 - rank) / 30.0 * 10.0
-        } else {
             return Double(rank) / 30.0 * 10.0
+        } else {
+            return Double(31 - rank) / 30.0 * 10.0
         }
     }
 
     private func dvpColor(rank: Int) -> Color {
-        // OPP_*_RANK: rank 1 = worst D (most allowed), rank 30 = best D
+        // OPP_*_RANK: rank 1 = best D (least allowed), rank 30 = worst D (most allowed)
         let direction = player.recommendedDirection ?? "Over"
         if direction == "Over" {
-            // Low rank = worst D = favorable for Over
-            if rank <= 12 { return .brandEmerald }   // favorable + elite
-            if rank <= 18 { return .brandOrange }    // neutral
-            return .brandRed                         // tough
-        } else {
-            // High rank = best D = favorable for Under
+            // High rank = worst D = favorable for Over
             if rank >= 18 { return .brandEmerald }   // favorable + elite
             if rank >= 12 { return .brandOrange }    // neutral
+            return .brandRed                         // tough
+        } else {
+            // Low rank = best D = favorable for Under
+            if rank <= 12 { return .brandEmerald }   // favorable + elite
+            if rank <= 18 { return .brandOrange }    // neutral
             return .brandRed                         // tough
         }
     }
@@ -889,25 +889,25 @@ struct RankingBreakdownSheet: View {
         let direction = player.recommendedDirection ?? "Over"
         let opp = player.opponentAbbr ?? "OPP"
 
-        // OPP_*_RANK: rank 1 = most allowed (worst D), rank 30 = best D
+        // OPP_*_RANK: rank 1 = least allowed (best D), rank 30 = most allowed (worst D)
         if direction == "Over" {
-            // Low rank = worst D = great for Over
-            if dvpRank <= 5 {
+            // High rank = worst D = great for Over
+            if dvpRank >= 25 {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — elite matchup for Over"
-            } else if dvpRank <= 12 {
+            } else if dvpRank >= 18 {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — favorable for Over"
-            } else if dvpRank <= 18 {
+            } else if dvpRank >= 12 {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — neutral matchup"
             } else {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — tough matchup for Over"
             }
         } else {
-            // High rank = best D = great for Under
-            if dvpRank >= 25 {
+            // Low rank = best D = great for Under
+            if dvpRank <= 5 {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — elite matchup for Under"
-            } else if dvpRank >= 18 {
+            } else if dvpRank <= 12 {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — favorable for Under"
-            } else if dvpRank >= 12 {
+            } else if dvpRank <= 18 {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — neutral matchup"
             } else {
                 return "\(opp) ranks #\(dvpRank)/30 vs \(posLabel) — tough matchup for Under"
